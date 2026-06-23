@@ -127,8 +127,13 @@ function App() {
     return () => window.removeEventListener("resize", checkIfMobile);
   }, []);
 
+  // App.jsx - Modify your first useEffect hook
   useEffect(() => {
+    let authTimer;
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (authTimer) clearTimeout(authTimer); // Clear fallback if Firebase responds quickly
+
       setCurrentUser(user);
       if (user) {
         setIsAdmin(user.uid === ADMIN_UID);
@@ -138,7 +143,21 @@ function App() {
       setAuthReady(true);
     });
 
-    return unsubscribe;
+    // ✨ OFFLINE FALLBACK: If mobile network is dead, force state readiness after 1.5s
+    if (!navigator.onLine) {
+      authTimer = setTimeout(() => {
+        console.warn(
+          "Firebase Auth timed out offline. Forcing fallback lifecycle.",
+        );
+        // We assume they were logged in previously, if auth reveals null later it will redirect
+        setAuthReady(true);
+      }, 1500);
+    }
+
+    return () => {
+      unsubscribe();
+      if (authTimer) clearTimeout(authTimer);
+    };
   }, []);
 
   useEffect(() => {

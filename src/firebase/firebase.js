@@ -6,7 +6,11 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromCache,
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
@@ -23,7 +27,11 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+});
 const wordsCollection = collection(db, "words");
 
 function getMissingFirebaseKeys() {
@@ -59,8 +67,17 @@ function normalizeWordSnapshot(wordDoc) {
 }
 
 export async function loadRemoteWords() {
-  const snapshot = await getDocs(wordsCollection);
+  // ✨ Check network context before querying Firestore
+  if (!navigator.onLine) {
+    console.log(
+      "Offline context detected: Sourcing data from local cache storage.",
+    );
+    const cacheSnapshot = await getDocsFromCache(wordsCollection);
+    return cacheSnapshot.docs.map(normalizeWordSnapshot);
+  }
 
+  // Fallback to normal online behavior
+  const snapshot = await getDocs(wordsCollection);
   return snapshot.docs.map(normalizeWordSnapshot);
 }
 
