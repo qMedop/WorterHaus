@@ -106,4 +106,15 @@ export async function saveRemoteLearnedWords(uid, learnedWords) {
   );
 }
 
+export async function saveRemoteApiKey(uid, apiKey) {
+  const userRef = doc(db, "users", uid);
+  await setDoc(userRef, { geminiApiKey: apiKey }, { merge: true });
+}
+
+export async function loadRemoteApiKey(uid) {
+  const userRef = doc(db, "users", uid);
+  const snap = await getDoc(userRef);
+  return snap.exists() ? snap.data().geminiApiKey : "";
+}
+
 export { app, auth, db };

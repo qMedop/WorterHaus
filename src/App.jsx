@@ -8,6 +8,9 @@ import {
   loadRemoteWords,
   saveRemoteLearnedWords,
   saveRemoteWord,
+  // Assuming these are exported from your firebase helper to update/load the API key in user table
+  saveRemoteApiKey,
+  loadRemoteApiKey,
 } from "./firebase/firebase";
 import {
   loadCachedLearnedWords,
@@ -16,10 +19,13 @@ import {
   saveCachedWords,
 } from "./lib/userDb";
 import styles from "./App.module.css";
+import WordCard from "./components/wordCard";
 
 const appStateStorageKey = "worterhaus.app-state";
 const geminiApiKeyStorageKey = "worterhaus.gemini-api-key";
 const wordBatchSize = 4;
+
+const ADMIN_UID = "P2xazy0GriXlkjj0QAobkaZ6bxt1";
 
 const defaultWords = [
   {
@@ -118,8 +124,8 @@ const articleFilterOptions = [
 ];
 
 const testDirectionOptions = [
-  { value: "du-en", label: "DU → EN" },
-  { value: "en-du", label: "EN → DU" },
+  { value: "du-en", label: "DU-EN" },
+  { value: "en-du", label: "EN-DU" },
 ];
 
 function getLearnedWordNames(wordList) {
@@ -139,6 +145,7 @@ function App() {
   const navigate = useNavigate();
   const [words, setWords] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncMessage, setSyncMessage] = useState("");
@@ -168,6 +175,11 @@ function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
+      if (user) {
+        setIsAdmin(user.uid === ADMIN_UID);
+      } else {
+        setIsAdmin(false);
+      }
       setAuthReady(true);
     });
 
@@ -217,6 +229,23 @@ function App() {
 
       try {
         if (isOnline) {
+          // Attempt to pull the API key from the user table alongside words
+          let remoteKey = "";
+          try {
+            if (typeof loadRemoteApiKey === "function") {
+              remoteKey = await loadRemoteApiKey(currentUser.uid);
+              if (remoteKey && !cancelled) {
+                setGeminiApiKey(remoteKey);
+                localStorage.setItem(geminiApiKeyStorageKey, remoteKey);
+              }
+            }
+          } catch (e) {
+            console.error(
+              "Failed to sync API key from user database table:",
+              e,
+            );
+          }
+
           const [remoteWords, remoteLearnedWords, cachedLearnedState] =
             await Promise.all([
               loadRemoteWords(),
@@ -324,12 +353,6 @@ function App() {
       JSON.stringify([...expandedWords]),
     );
   }, [expandedWords]);
-
-  useEffect(() => {
-    if (geminiApiKey) {
-      localStorage.setItem(geminiApiKeyStorageKey, geminiApiKey);
-    }
-  }, [geminiApiKey]);
 
   const categories = useMemo(
     () => [...new Set(words.map((word) => word.category).filter(Boolean))],
@@ -441,34 +464,40 @@ function App() {
   const progressPercent =
     totalCount > 0 ? Math.round((learnedCount / totalCount) * 100) : 0;
 
-  async function persistWords(nextWords) {
-    if (!currentUser) {
-      setWords(nextWords);
-      return;
-    }
-
-    const learnedWordNames = getLearnedWordNames(nextWords);
-
-    await saveCachedWords(nextWords);
-
-    if (isOnline) {
-      await saveRemoteLearnedWords(currentUser.uid, learnedWordNames);
-      await saveCachedLearnedWords(currentUser.uid, learnedWordNames, false);
-      setSyncMessage("Changes saved to Firebase.");
-    } else {
-      await saveCachedLearnedWords(currentUser.uid, learnedWordNames, true);
-      setSyncMessage("Saved offline. It will sync when connection returns.");
-    }
-
-    setWords(nextWords);
-  }
-
   async function toggleLearned(wordName) {
+    // 1. Snapshot previous state for potential rollback
+    const previousWords = [...words];
+
+    // 2. Optimistically update UI state
     const nextWords = words.map((word) =>
       word.word === wordName ? { ...word, learned: !word.learned } : word,
     );
+    setWords(nextWords);
 
-    await persistWords(nextWords);
+    if (!currentUser) return;
+
+    const learnedWordNames = getLearnedWordNames(nextWords);
+
+    try {
+      // Direct local cache upgrade
+      await saveCachedWords(nextWords);
+
+      if (isOnline) {
+        await saveRemoteLearnedWords(currentUser.uid, learnedWordNames);
+        await saveCachedLearnedWords(currentUser.uid, learnedWordNames, false);
+        setSyncMessage("Changes saved to Firebase.");
+      } else {
+        await saveCachedLearnedWords(currentUser.uid, learnedWordNames, true);
+        setSyncMessage("Saved offline. It will sync when connection returns.");
+      }
+    } catch (error) {
+      console.error("Failed to modify learning state, rolling back...", error);
+      setSyncMessage("Failed to update status. Rolled back changes.");
+      // Rollback to prior UI configuration on error
+      setWords(previousWords);
+      // Synchronize indexedDB storage back to safe snapshot
+      await saveCachedWords(previousWords);
+    }
   }
 
   function toggleSelectedValue(value, setter) {
@@ -540,17 +569,31 @@ function App() {
       return;
     }
 
-    const nextWords = words.filter((word) => word.word !== wordName);
+    // 1. Snapshot previous structural elements for potential rollback
+    const previousWords = [...words];
+    const previousExpanded = new Set(expandedWords);
 
+    // 2. Optimistic UI update
+    const nextWords = words.filter((word) => word.word !== wordName);
     setWords(nextWords);
-    await deleteRemoteWord(wordName);
-    await saveCachedWords(nextWords);
     setExpandedWords((currentExpandedWords) => {
       const nextExpandedWords = new Set(currentExpandedWords);
       nextExpandedWords.delete(wordName);
       return nextExpandedWords;
     });
-    setSyncMessage("Word deleted from Firebase.");
+
+    try {
+      // 3. Initiate backend call synchronously without pausing UI lifecycle
+      await deleteRemoteWord(wordName);
+      await saveCachedWords(nextWords);
+      setSyncMessage("Word deleted from Firebase.");
+    } catch (error) {
+      console.error("Deletion failed, rolling back changes...", error);
+      setSyncMessage("Delete failed. Reverting changes.");
+      // Rollback to baseline on exception response
+      setWords(previousWords);
+      setExpandedWords(previousExpanded);
+    }
   }
 
   function openApiKeyModal() {
@@ -558,9 +601,26 @@ function App() {
     setApiKeyModalOpen(true);
   }
 
-  function saveApiKey() {
-    setGeminiApiKey(apiKeyDraft.trim());
+  async function saveApiKey() {
+    const trimmedKey = apiKeyDraft.trim();
+    setGeminiApiKey(trimmedKey);
+    localStorage.setItem(geminiApiKeyStorageKey, trimmedKey);
     setApiKeyModalOpen(false);
+
+    // Persist to user table backend if authenticated and online
+    if (currentUser && isOnline) {
+      try {
+        if (typeof saveRemoteApiKey === "function") {
+          await saveRemoteApiKey(currentUser.uid, trimmedKey);
+          setSyncMessage("API Key saved to your cloud profile.");
+        }
+      } catch (e) {
+        console.error(
+          "Could not backup API key to cloud user record table:",
+          e,
+        );
+      }
+    }
   }
 
   function requireApiKey() {
@@ -634,7 +694,7 @@ function App() {
 
   return (
     <div className={styles.page}>
-      <Navbar onOpenApiKeyModal={openApiKeyModal} />
+      <Navbar onOpenApiKeyModal={openApiKeyModal} isAdmin={isAdmin} />
 
       <main className={styles.main}>
         <section className={styles.hero}>
@@ -644,10 +704,6 @@ function App() {
             progressPercent={progressPercent}
           />
         </section>
-
-        {syncMessage ? (
-          <div className={styles.syncBanner}>{syncMessage}</div>
-        ) : null}
 
         <section ref={filterPanelRef} className={styles.panel}>
           <div className={styles.filterGrid}>
@@ -796,39 +852,45 @@ function App() {
           </div>
 
           <div className={styles.testModePanel}>
-            <label className={styles.testModeToggle}>
-              <input
-                type="checkbox"
-                checked={testModeEnabled}
-                onChange={(event) => {
-                  setTestModeEnabled(event.target.checked);
-                  resetResultsForTestMode();
-                }}
-              />
-              <span>
-                <strong>Enable test mode</strong>
-                <em>Blur the answer side and keep the prompt side visible.</em>
-              </span>
-            </label>
-
-            <div className={styles.testModeDirections}>
-              {testDirectionOptions.map((option) => (
+            <div className={styles.testModeToggle}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "12px" }}
+              >
                 <button
-                  key={option.value}
                   type="button"
-                  className={`${styles.testDirectionButton} ${
-                    testModeDirection === option.value
-                      ? styles.testDirectionButtonActive
-                      : ""
+                  className={`${styles.toggle} ${
+                    testModeEnabled ? styles.toggleOn : ""
                   }`}
                   onClick={() => {
-                    setTestModeDirection(option.value);
+                    setTestModeEnabled((prev) => !prev);
                     resetResultsForTestMode();
                   }}
                 >
-                  {option.label}
+                  <span className={styles.toggleThumb} />
                 </button>
-              ))}
+                <span>Test mode</span>
+              </div>
+              {testModeEnabled && (
+                <div className={styles.testModeDirections}>
+                  {testDirectionOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`${styles.testDirectionButton} ${
+                        testModeDirection === option.value
+                          ? styles.testDirectionButtonActive
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setTestModeDirection(option.value);
+                        resetResultsForTestMode();
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -838,6 +900,7 @@ function App() {
             <WordCard
               key={word.word}
               word={word}
+              isAdmin={isAdmin}
               expanded={expandedWords.has(word.word)}
               aiResult={aiResults[word.word] ?? null}
               aiBusy={aiBusyWord === word.word}
@@ -874,12 +937,11 @@ function App() {
   );
 }
 
-function Navbar({ onOpenApiKeyModal }) {
+function Navbar({ onOpenApiKeyModal, isAdmin }) {
   return (
     <nav className={styles.navbar}>
       <div>
         <h1>WörterHaus</h1>
-        <p>Build your German vocabulary step by step.</p>
       </div>
 
       <div className={styles.navActions}>
@@ -890,9 +952,15 @@ function Navbar({ onOpenApiKeyModal }) {
         >
           Gemini API
         </button>
-        <button type="button" className={styles.navActionButton}>
-          Library
-        </button>
+
+        {isAdmin && (
+          <button
+            type="button"
+            className={`${styles.navActionButton} ${styles.adminBtn}`}
+          >
+            Upload
+          </button>
+        )}
       </div>
     </nav>
   );
@@ -941,7 +1009,20 @@ function DropdownFilter({
           <em>{summary}</em>
         </span>
         <span className={styles.dropdownCaret} aria-hidden="true">
-          ▾
+          <div className="svg">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M18.5303 9.46967C18.8232 9.76256 18.8232 10.2374 18.5303 10.5303L12.5303 16.5303C12.2374 16.8232 11.7626 16.8232 11.4697 16.5303L5.46967 10.5303C5.17678 10.2374 5.17678 9.76256 5.46967 9.46967C5.76256 9.17678 6.23744 9.17678 6.53033 9.46967L12 14.9393L17.4697 9.46967C17.7626 9.17678 18.2374 9.17678 18.5303 9.46967Z"
+                fill="#f1f1f1"
+              ></path>
+            </svg>
+          </div>
         </span>
       </button>
 
@@ -956,261 +1037,6 @@ function DropdownFilter({
   );
 }
 
-function WordCard({
-  word,
-  expanded,
-  aiResult,
-  aiBusy,
-  testModeEnabled,
-  testModeDirection,
-  pressedWordName,
-  onToggleLearned,
-  onDelete,
-  onGenerateAiExample,
-  onGenerateAiMnemonic,
-  onToggleExpanded,
-  onPronounce,
-  onPromptPressStart,
-  onPromptPressEnd,
-  getConjugation,
-}) {
-  const articleClass = word.article ? styles[word.article] : styles.neutral;
-  const showGermanPrompt = testModeDirection === "du-en";
-  const promptIsPressed = pressedWordName === word.word;
-  const shouldBlurGerman = testModeEnabled && !showGermanPrompt;
-  const shouldBlurEnglish = testModeEnabled && showGermanPrompt;
-
-  return (
-    <article
-      className={`${styles.card} ${expanded ? styles.cardExpanded : ""} ${word.learned ? styles.cardLearned : ""}`}
-    >
-      <div className={styles.cardHeader}>
-        <button
-          type="button"
-          className={styles.cardHeaderMain}
-          onClick={onToggleExpanded}
-        >
-          <span
-            className={`${styles.articlePill} ${articleClass} ${
-              testModeEnabled ? styles.hiddenInTestMode : ""
-            }`}
-          >
-            {word.article ?? "—"}
-          </span>
-
-          <div className={styles.cardTitleBlock}>
-            <div className={styles.cardTitleLine}>
-              <h3
-                className={`${shouldBlurGerman ? styles.promptBlur : ""} ${
-                  promptIsPressed && shouldBlurGerman ? styles.promptReveal : ""
-                }`}
-                onMouseDown={showGermanPrompt ? undefined : onPromptPressStart}
-                onMouseUp={showGermanPrompt ? undefined : onPromptPressEnd}
-                onMouseLeave={showGermanPrompt ? undefined : onPromptPressEnd}
-                onTouchStart={showGermanPrompt ? undefined : onPromptPressStart}
-                onTouchEnd={showGermanPrompt ? undefined : onPromptPressEnd}
-                onTouchCancel={showGermanPrompt ? undefined : onPromptPressEnd}
-              >
-                {word.word}
-              </h3>
-              {!testModeEnabled ? (
-                <span className={styles.cardArrow} aria-hidden="true">
-                  ▾
-                </span>
-              ) : null}
-            </div>
-            <p
-              className={`${shouldBlurEnglish ? styles.promptBlur : ""} ${
-                promptIsPressed && shouldBlurEnglish ? styles.promptReveal : ""
-              }`}
-              onMouseDown={showGermanPrompt ? onPromptPressStart : undefined}
-              onMouseUp={showGermanPrompt ? onPromptPressEnd : undefined}
-              onMouseLeave={showGermanPrompt ? onPromptPressEnd : undefined}
-              onTouchStart={showGermanPrompt ? onPromptPressStart : undefined}
-              onTouchEnd={showGermanPrompt ? onPromptPressEnd : undefined}
-              onTouchCancel={showGermanPrompt ? onPromptPressEnd : undefined}
-            >
-              {word.translation}
-            </p>
-          </div>
-        </button>
-
-        {!testModeEnabled ? (
-          <button
-            type="button"
-            className={styles.soundButton}
-            onClick={onPronounce}
-            aria-label={`Pronounce ${word.word}`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M11 5L6.5 9H3v6h3.5L11 19V5Z"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M15 9.5C16.1 10.2 16.8 11.3 16.8 12.5C16.8 13.7 16.1 14.8 15 15.5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M17.8 7C19.5 8.2 20.5 10.2 20.5 12.5C20.5 14.8 19.5 16.8 17.8 18"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        ) : null}
-      </div>
-
-      <div className={styles.cardActions}>
-        <div className={styles.actionGroup}>
-          <button
-            type="button"
-            className={styles.iconButton}
-            onClick={onToggleLearned}
-            aria-label={word.learned ? "Mark not learned" : "Mark learned"}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M5 12.5L9.2 16.7L19 7"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-
-          <button
-            type="button"
-            className={styles.iconButton}
-            onClick={onDelete}
-            aria-label={`Delete ${word.word}`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M4 7H20"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-              />
-              <path
-                d="M9 7V5.8C9 5.31 9.31 5 9.8 5H14.2C14.69 5 15 5.31 15 5.8V7"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-              />
-              <path
-                d="M8 7L8.7 19.1C8.74 19.74 9.26 20.25 9.9 20.25H14.1C14.74 20.25 15.26 19.74 15.3 19.1L16 7"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <div
-        className={`${styles.cardBody} ${expanded ? styles.cardBodyOpen : ""}`}
-      >
-        {testModeEnabled &&
-        testModeDirection === "en-du" ? null : word.plural ? (
-          <div className={styles.fullWidthBlock}>
-            <span className={styles.blockLabel}>Plural</span>
-            <strong>{word.plural}</strong>
-          </div>
-        ) : null}
-
-        {testModeEnabled &&
-        testModeDirection === "en-du" ? null : word.compound_breakdown ? (
-          <div className={styles.fullWidthBlock}>
-            <span className={styles.blockLabel}>Compound</span>
-            <strong>{word.compound_breakdown.join(" + ")}</strong>
-          </div>
-        ) : null}
-
-        {testModeEnabled && testModeDirection === "en-du" ? null : word.type ===
-            "verb" && word.conjugations ? (
-          <div className={styles.detailBox}>
-            <span>Conjugations</span>
-            <div className={styles.conjugationList}>
-              {[
-                ["ich", getConjugation(word, "ich")],
-                ["du", getConjugation(word, "du")],
-                ["er/sie/es", getConjugation(word, "er")],
-                ["wir", getConjugation(word, "wir")],
-                ["Sie/sie", getConjugation(word, "Sie_sie")],
-              ].map(([person, form]) => (
-                <div key={person} className={styles.conjugationRow}>
-                  <strong>{person}</strong>
-                  <span>{form ?? "—"}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {testModeEnabled && testModeDirection === "en-du" ? null : (
-          <div className={styles.aiSection}>
-            <div className={styles.aiHeader}>
-              <span>AI section</span>
-              <em>{aiResult ? "Ready" : "Tap to generate"}</em>
-            </div>
-
-            <div className={styles.aiButtons}>
-              <button
-                type="button"
-                className={styles.aiButton}
-                onClick={onGenerateAiExample}
-              >
-                Generate example
-              </button>
-              <button
-                type="button"
-                className={styles.aiButton}
-                onClick={onGenerateAiMnemonic}
-              >
-                Create mnemonic
-              </button>
-            </div>
-
-            {aiBusy ? (
-              <span className={styles.emptyState}>Generating...</span>
-            ) : null}
-            {aiResult?.example ? (
-              <p className={styles.aiResult}>{aiResult.example}</p>
-            ) : null}
-            {aiResult?.mnemonic ? (
-              <p className={styles.aiResult}>{aiResult.mnemonic}</p>
-            ) : null}
-          </div>
-        )}
-
-        {testModeEnabled && testModeDirection === "en-du" ? null : expanded ? (
-          <p className={styles.notes}>{word.notes}</p>
-        ) : null}
-      </div>
-    </article>
-  );
-}
-
 function ApiKeyModal({ apiKeyDraft, onChangeApiKeyDraft, onClose, onSave }) {
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
@@ -1220,15 +1046,60 @@ function ApiKeyModal({ apiKeyDraft, onChangeApiKeyDraft, onClose, onSave }) {
       >
         <h3>Gemini API key</h3>
         <p>
-          Paste your Gemini API key here. It stays on this device in local
-          storage.
+          This cost you no money but it count toward your Gemini API usage
+          limits, that's why i can't provide my own key, so if you want to use
+          the AI features provide your own or you can contuine using the app
+          without the AI features.
         </p>
+
+        <p>
+          If you don't have a key yet, you can get one for free from Google AI
+          Studio.
+        </p>
+        <div
+          style={{
+            padding: "12px",
+            borderRadius: "6px",
+            fontSize: "13px",
+            lineHeight: "1.5em",
+            color: "#f1f1f1",
+          }}
+        >
+          <strong>How to get your own API Key:</strong>
+          <ol style={{ margin: "6px 0 0 18px", padding: 0 }}>
+            <li>
+              Go to the
+              <a
+                href="https://aistudio.google.com/"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "#0066cc", decoration: "underline" }}
+              >
+                Google AI Studio
+              </a>
+              console.
+            </li>
+            <li>Sign in using your primary Google Account.</li>
+            <li>
+              Click the blue <strong>"Get API key"</strong> button in the upper
+              left corner.
+            </li>
+            <li>
+              Select <strong>"Create API key"</strong>, assign it to a project
+              (or create a new one), and copy the resulting string.
+            </li>
+            <li>
+              Paste the key string directly into the field below and save!
+            </li>
+          </ol>
+        </div>
+
         <input
           className={styles.modalInput}
           type="password"
           value={apiKeyDraft}
           onChange={(event) => onChangeApiKeyDraft(event.target.value)}
-          placeholder="AIza..."
+          placeholder="XXXXXXXXXXXXXXXX"
         />
         <div className={styles.modalActions}>
           <button
