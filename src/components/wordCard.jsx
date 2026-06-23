@@ -1,12 +1,15 @@
 import { motion, AnimatePresence } from "framer-motion";
 import styles from "./wordCard.module.css";
+import { useState } from "react";
 
 function WordCard({
   word,
   isAdmin,
   expanded,
   aiResult,
-  aiBusy,
+  aiBusyM = false,
+  aiBusyE = false,
+
   testModeEnabled,
   testModeDirection,
   pressedWordName,
@@ -25,29 +28,45 @@ function WordCard({
     ? styles[`border-${word.article}`]
     : styles.borderNeutral;
 
-  const showGermanPrompt = testModeDirection === "du-en";
-  const promptIsPressed = pressedWordName === word.word;
-  const shouldBlurGerman = testModeEnabled && !showGermanPrompt;
-  const shouldBlurEnglish = testModeEnabled && showGermanPrompt;
+  const showENPrompt = testModeDirection === "en-du";
 
+  function formatMarkdownText(text) {
+    if (!text) return "";
+
+    // Split text by the markdown bold marker **
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+
+    return parts.map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        // Clean off the asterisks and return a stylized bold element
+        return (
+          <strong
+            key={index}
+            style={{ color: "var(--text-highlight, #f1f1f1)", fontWeight: 700 }}
+          >
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return part;
+    });
+  }
   return (
     <article
       className={`${styles.card} ${expanded ? styles.cardExpanded : ""} ${
         word.learned ? styles.cardLearned : ""
-      } ${genderBorderClass}`}
+      } ${genderBorderClass} ${testModeEnabled && showENPrompt ? styles.hideBorderColor : ""}`}
     >
       {/* Upper Main Interactive Row */}
       <div className={styles.cardHeader}>
         <div className={styles.cardHeaderMain} onClick={onToggleExpanded}>
           <div className={styles.cardTopMetadataRow}>
             <div>
-              <div className={styles.articlePill + ` ${articleClass}`}>
-                <span
-                  className={` ${testModeEnabled ? styles.hiddenInTestMode : ""}`}
-                >
-                  {word.article ?? "—"}
-                </span>
-              </div>
+              <ArticleRevealer
+                isTestActive={testModeEnabled}
+                articleValue={word.article}
+                articleClass={styles.articlePill + ` ${articleClass}`}
+              />
               {word.type && (
                 <span className={styles.wordTypeLabel}>{word.type}</span>
               )}
@@ -76,42 +95,24 @@ function WordCard({
 
           <div className={styles.cardTitleBlock}>
             {/* German Term Side */}
-            <div
-              className={`${styles.termContainer} ${shouldBlurGerman ? styles.clickablePromptBox : ""}`}
-              onMouseDown={showGermanPrompt ? undefined : onPromptPressStart}
-              onMouseUp={showGermanPrompt ? undefined : onPromptPressEnd}
-              onMouseLeave={showGermanPrompt ? undefined : onPromptPressEnd}
-              onTouchStart={showGermanPrompt ? undefined : onPromptPressStart}
-              onTouchEnd={showGermanPrompt ? undefined : onPromptPressEnd}
-              onTouchCancel={showGermanPrompt ? undefined : onPromptPressEnd}
+            <BlurRevealer
+              isTestActive={testModeEnabled && testModeDirection === "en-du"}
+              className={styles.termContainer}
             >
-              <h3
-                className={`${shouldBlurGerman ? styles.promptBlur : ""} ${promptIsPressed && shouldBlurGerman ? styles.promptReveal : ""}`}
-              >
-                {word.word}
-              </h3>
-              <SoundIcon onPronounce={onPronounce} word={word} />
-            </div>
+              <p className={styles.shouldBlurGerman}>{word.word}</p>
+              {testModeEnabled && testModeDirection === "du-en" && (
+                <SoundIcon onPronounce={onPronounce} word={word} />
+              )}
+            </BlurRevealer>
 
             {/* English Target Translation Side */}
-            <div
-              className={`${styles.termContainerEN} ${shouldBlurEnglish ? styles.clickablePromptBox : ""}`}
-              onMouseDown={showGermanPrompt ? onPromptPressStart : undefined}
-              onMouseUp={showGermanPrompt ? onPromptPressEnd : undefined}
-              onMouseLeave={showGermanPrompt ? onPromptPressEnd : undefined}
-              onTouchStart={showGermanPrompt ? onPromptPressStart : undefined}
-              onTouchEnd={showGermanPrompt ? onPromptPressEnd : undefined}
-              onTouchCancel={showGermanPrompt ? onPromptPressEnd : undefined}
+
+            <BlurRevealer
+              isTestActive={testModeEnabled && testModeDirection === "du-en"}
+              className={styles.termContainerEN}
             >
-              <p
-                className={`${styles.translationText} ${shouldBlurEnglish ? styles.promptBlur : ""} ${promptIsPressed && shouldBlurEnglish ? styles.promptReveal : ""}`}
-              >
-                {word.translation}
-              </p>
-              {shouldBlurEnglish && (
-                <span className={styles.pressToRevealHint}>Hold to reveal</span>
-              )}
-            </div>
+              <p className={styles.translationText}>{word.translation}</p>
+            </BlurRevealer>
           </div>
         </div>
 
@@ -142,92 +143,118 @@ function WordCard({
             className={styles.cardBodyWrapper}
           >
             <div className={styles.cardBodyInner}>
-              {testModeEnabled &&
-              testModeDirection === "en-du" ? null : word.plural ? (
-                <div className={styles.fullWidthBlock}>
-                  <span className={styles.blockLabel}>Plural Form</span>
-                  <strong className={styles.blockValue}>{word.plural}</strong>
-                </div>
-              ) : null}
-
-              {testModeEnabled &&
-              testModeDirection === "en-du" ? null : word.compound_breakdown ? (
-                <div className={styles.fullWidthBlock}>
-                  <span className={styles.blockLabel}>Compound Components</span>
-                  <strong className={styles.blockValue}>
-                    {word.compound_breakdown.join(" + ")}
-                  </strong>
-                </div>
-              ) : null}
-
-              {testModeEnabled &&
-              testModeDirection === "en-du" ? null : word.type === "verb" &&
-                word.conjugations ? (
-                <div className={styles.detailBox}>
-                  <span className={styles.blockLabel}>Verb Conjugations</span>
-                  <div className={styles.conjugationList}>
-                    {[
-                      ["ich", getConjugation(word, "ich")],
-                      ["du", getConjugation(word, "du")],
-                      ["er/sie/es", getConjugation(word, "er")],
-                      ["wir", getConjugation(word, "wir")],
-                      ["Sie/sie", getConjugation(word, "Sie_sie")],
-                    ].map(([person, form]) => (
-                      <div key={person} className={styles.conjugationRow}>
-                        <strong className={styles.conjPerson}>{person}</strong>
-                        <span className={styles.conjForm}>{form ?? "—"}</span>
-                      </div>
-                    ))}
+              <div className={styles.pluralAndCompound}>
+                {testModeEnabled &&
+                testModeDirection === "en-du" ? null : word.plural ? (
+                  <div className={styles.fullWidthBlock}>
+                    <span className={styles.blockLabel}>Plural Form:</span>
+                    <span className={styles.blockValue}>{word.plural}</span>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
+
+                {testModeEnabled &&
+                testModeDirection ===
+                  "en-du" ? null : word.compound_breakdown ? (
+                  <div className={styles.fullWidthBlock}>
+                    <span className={styles.blockLabel}>
+                      Compound Components:
+                    </span>
+                    <span className={styles.blockValue}>
+                      {word.compound_breakdown}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+              {word.conjugations &&
+                Object.keys(word.conjugations).length > 0 && (
+                  <div className={styles.detailBox}>
+                    <span className={styles.blockLabel}>
+                      Verb Conjugations:
+                    </span>
+                    <div className={styles.conjugationList}>
+                      {[
+                        ["ich", getConjugation(word, "ich")],
+                        ["du", getConjugation(word, "du")],
+                        ["er/sie/es", getConjugation(word, "er")],
+                        ["wir", getConjugation(word, "wir")],
+                        ["ihr", getConjugation(word, "ihr")],
+                        ["Sie/sie", getConjugation(word, "Sie_sie")],
+                      ].map(([person, form]) => (
+                        <div
+                          key={person}
+                          className={`${styles.conjugationRow} ${
+                            testModeEnabled && testModeDirection === "en-du"
+                              ? styles.blured
+                              : ""
+                          }`}
+                        >
+                          <strong className={styles.conjPerson}>
+                            {person}
+                          </strong>
+                          <BlurRevealer
+                            isTestActive={
+                              testModeEnabled && testModeDirection === "en-du"
+                            }
+                          >
+                            <p className={styles.conjForm}>{form ?? "—"}</p>
+                          </BlurRevealer>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
               {testModeEnabled && testModeDirection === "en-du" ? null : (
                 <div className={styles.aiSection}>
                   <div className={styles.aiHeader}>
-                    <span>AI Study Assistants</span>
-                    <em>{aiResult ? "Ready" : "Tap to generate"}</em>
+                    <p>AI Study Assistants</p>
                   </div>
 
-                  <div className={styles.aiButtons}>
-                    <button
-                      type="button"
-                      className={styles.aiButton}
-                      onClick={onGenerateAiExample}
-                    >
-                      Context Example
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.aiButton}
-                      onClick={onGenerateAiMnemonic}
-                    >
-                      Mnemonic Memory Trick
-                    </button>
-                  </div>
-
-                  {aiBusy && (
-                    <div className={styles.generatingWrapper}>
-                      <span className={styles.loadingPulse}></span>
-                      <span className={styles.emptyState}>
-                        Generating structural intelligence...
-                      </span>
+                  <div className={styles.aiHolder}>
+                    <div className={styles.aiBottom}>
+                      <span className={styles.blockLabel}>Example:</span>
+                      <div>
+                        {aiResult?.example ? (
+                          <p className={styles.aiResult}>
+                            {formatMarkdownText(aiResult.example)}
+                          </p>
+                        ) : (
+                          <button
+                            type="button"
+                            className={styles.aiButton}
+                            onClick={onGenerateAiExample}
+                          >
+                            {aiBusyE ? "Thinking" : "Generate 💡"}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  )}
-
-                  {aiResult?.example && (
-                    <p className={styles.aiResult}>💡 {aiResult.example}</p>
-                  )}
-                  {aiResult?.mnemonic && (
-                    <p className={styles.aiResult}>🧠 {aiResult.mnemonic}</p>
-                  )}
+                    <div className={styles.aiBottom}>
+                      <span className={styles.blockLabel}>Mnemonic:</span>
+                      <div>
+                        {aiResult?.mnemonic ? (
+                          <p className={styles.aiResult}>
+                            {formatMarkdownText(aiResult.mnemonic)}
+                          </p>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`${styles.aiButton} ${styles.mnemonicButton}`}
+                            onClick={onGenerateAiMnemonic}
+                          >
+                            {aiBusyM ? "Thinking" : "Generate 🧠"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
               {testModeEnabled &&
               testModeDirection === "en-du" ? null : word.notes ? (
                 <div className={styles.notesBlock}>
-                  <span className={styles.blockLabel}>Usage Notes</span>
+                  <span className={styles.blockLabel}>Note:</span>
                   <p className={styles.notesText}>{word.notes}</p>
                 </div>
               ) : null}
@@ -335,6 +362,68 @@ function SoundIcon({ onPronounce, word }) {
         />
       </svg>
     </button>
+  );
+}
+function BlurRevealer({ isTestActive, children, className = "" }) {
+  const [isRevealed, setIsRevealed] = useState(false);
+
+  if (!isTestActive) {
+    return <div className={className}>{children}</div>;
+  }
+
+  // Touch Handlers for Mobile devices
+  const handleTouchStart = () => setIsRevealed(true);
+  const handleTouchEnd = () => setIsRevealed(false);
+
+  // Mouse Handlers for PC/Desktop devices
+  const handleMouseEnter = () => setIsRevealed(true);
+  const handleMouseLeave = () => setIsRevealed(false);
+
+  return (
+    <div
+      className={`${className} ${styles.revealerContainer} ${
+        !isRevealed ? styles.blurredState : ""
+      }`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
+      {children}
+    </div>
+  );
+}
+function ArticleRevealer({
+  isTestActive,
+  articleValue,
+  articleClass,
+  className = "",
+}) {
+  const [isRevealed, setIsRevealed] = useState(false);
+
+  const displayValue =
+    isTestActive && !isRevealed ? "?" : (articleValue ?? "—");
+
+  if (!isTestActive) {
+    return (
+      <div className={`${className} ${articleClass} `}>
+        <span>{articleValue ?? "—"}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`${className} ${articleClass} ${styles.revealerContainer} ${isRevealed ? styles.blurredState : ""}`}
+      onMouseEnter={() => setIsRevealed(true)}
+      onMouseLeave={() => setIsRevealed(false)}
+      onTouchStart={() => setIsRevealed(true)}
+      onTouchEnd={() => setIsRevealed(false)}
+      onTouchCancel={() => setIsRevealed(false)}
+    >
+      <span>{displayValue}</span>
+    </div>
   );
 }
 export default WordCard;

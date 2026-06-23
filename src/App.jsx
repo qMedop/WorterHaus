@@ -8,7 +8,6 @@ import {
   loadRemoteWords,
   saveRemoteLearnedWords,
   saveRemoteWord,
-  // Assuming these are exported from your firebase helper to update/load the API key in user table
   saveRemoteApiKey,
   loadRemoteApiKey,
 } from "./firebase/firebase";
@@ -20,6 +19,7 @@ import {
 } from "./lib/userDb";
 import styles from "./App.module.css";
 import WordCard from "./components/wordCard";
+import UploadWords from "./components/uploadWords";
 
 const appStateStorageKey = "worterhaus.app-state";
 const geminiApiKeyStorageKey = "worterhaus.gemini-api-key";
@@ -163,11 +163,14 @@ function App() {
   const [testModeDirection, setTestModeDirection] = useState("du-en");
   const [pressedWordName, setPressedWordName] = useState(null);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
+  const [uploadModule, setUploadModule] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState(
     () => localStorage.getItem(geminiApiKeyStorageKey) ?? "",
   );
-  const [aiBusyWord, setAiBusyWord] = useState(null);
+  const [aiBusyE, setAiBusyE] = useState(false);
+  const [aiBusyM, setAiBusyM] = useState(false);
+
   const [aiResults, setAiResults] = useState({});
   const filterPanelRef = useRef(null);
   const loadMoreRef = useRef(null);
@@ -595,7 +598,55 @@ function App() {
       setExpandedWords(previousExpanded);
     }
   }
+  async function handleUploadSuccess(newWordsPayload) {
+    if (!isOnline) {
+      setSyncMessage(
+        "Uploading new datasets requires an active internet connection.",
+      );
+      return;
+    }
 
+    // 1. Snapshot prior database state for an absolute rollback point
+    const previousWords = [...words];
+
+    // 2. Optimistically merge and update local application UI layout structures
+    // Prevent duplicate entries by filtering out local items with matching word names
+    const cleanCurrentWords = words.filter(
+      (currentWord) =>
+        !newWordsPayload.some((newWord) => newWord.word === currentWord.word),
+    );
+
+    const combinedNextWords = [...cleanCurrentWords, ...newWordsPayload];
+    setWords(combinedNextWords);
+    setSyncMessage("Optimistically parsing dataset and injecting locally...");
+
+    try {
+      // 3. Write directly to the local device IndexedDB cache immediately
+      await saveCachedWords(combinedNextWords);
+
+      // 4. Batch push each word systematically into your Firebase Firestore records
+      // Utilizing Promise.all to dispatch server queries synchronously
+      await Promise.all(
+        newWordsPayload.map((wordData) => saveRemoteWord(wordData)),
+      );
+
+      setSyncMessage(
+        `Successfully injected and synchronized ${newWordsPayload.length} words with Firebase.`,
+      );
+    } catch (error) {
+      console.error(
+        "Firebase cloud dataset initialization failed, rolling back alterations...",
+        error,
+      );
+      setSyncMessage(
+        "Cloud synchronization error detected. Reverting structural updates.",
+      );
+
+      // 5. Fail-Safe Rollback: Return state and local database back to safe baseline snapshots
+      setWords(previousWords);
+      await saveCachedWords(previousWords);
+    }
+  }
   function openApiKeyModal() {
     setApiKeyDraft(geminiApiKey);
     setApiKeyModalOpen(true);
@@ -632,28 +683,119 @@ function App() {
     return true;
   }
 
-  function generateAiResult(word, mode) {
+  async function generateAiResult(word, mode) {
     if (!requireApiKey()) {
       return;
     }
 
-    setAiBusyWord(word.word);
+    if (mode === "example") {
+      setAiBusyE(true);
+    } else {
+      setAiBusyM(true);
+    }
 
-    window.setTimeout(() => {
+    try {
+      // Craft clean engineering prompts for structured responses
+      const examplePrompt = `
+        You are a German teacher.
+
+        Create ONE short and natural German sentence (A1-A2 level) using the word "${word.word}".
+
+        Rules:
+        - Use the word naturally.
+        - Use everyday situations.
+        - Keep the sentence under 12 words.
+        - Make it grammatically correct.
+        - Put the German sentence on the first line.
+        - Put the English translation on the second line.
+        - Do not explain grammar.
+        - Do not add bullet points.
+        - Do not add extra text.
+
+        Word: ${word.word}
+        Meaning: ${word.translation}
+        `;
+
+      const mnemonicPrompt = `
+        You are helping an English speaker memorize German vocabulary.
+
+        Create ONE short and memorable mnemonic for:
+
+        German word: "${word.word}"
+        Meaning: "${word.translation}"
+
+        Rules:
+        - Maximum 2 sentences.
+        - Make it funny, vivid, or absurd.
+        - Use sound similarities when possible.
+        - Focus on helping memory, not linguistic accuracy.
+        - Do not explain the mnemonic.
+        - Return only the mnemonic.
+        `;
+
+      const prompt = mode === "example" ? examplePrompt : mnemonicPrompt;
+
+      // Dispatch request directly to official Google Gemini API Endpoint
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: prompt,
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Gemini API Error Status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Parse official Gemini response payload structure
       const resultText =
-        mode === "example"
-          ? `Example: Ich sehe den ${word.word.toLowerCase()} jeden Tag.`
-          : `Mnemonic: ${word.word} helps you remember ${word.translation}.`;
+        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+        "No response text found.";
+
+      // Commit result smoothly to your UI state
+      setAiResults((currentResults) => ({
+        ...currentResults,
+        [word.word]: {
+          ...(currentResults[word.word] ?? {}),
+          [mode]: resultText.trim(),
+        },
+      }));
+    } catch (error) {
+      console.error("AI Generation failed:", error);
+      setSyncMessage(
+        "Gemini generation failed. Please verify your API Key and network.",
+      );
 
       setAiResults((currentResults) => ({
         ...currentResults,
         [word.word]: {
           ...(currentResults[word.word] ?? {}),
-          [mode]: resultText,
+          [mode]: `❌ Error: ${error instanceof Error ? error.message : "Couldn't reach Gemini."}`,
         },
       }));
-      setAiBusyWord(null);
-    }, 700);
+    } finally {
+      if (mode === "example") {
+        setAiBusyE(false);
+      } else {
+        setAiBusyM(false);
+      }
+    }
   }
 
   function getConjugation(word, key) {
@@ -694,7 +836,11 @@ function App() {
 
   return (
     <div className={styles.page}>
-      <Navbar onOpenApiKeyModal={openApiKeyModal} isAdmin={isAdmin} />
+      <Navbar
+        onOpenApiKeyModal={openApiKeyModal}
+        isAdmin={isAdmin}
+        setUploadModule={setUploadModule}
+      />
 
       <main className={styles.main}>
         <section className={styles.hero}>
@@ -903,7 +1049,8 @@ function App() {
               isAdmin={isAdmin}
               expanded={expandedWords.has(word.word)}
               aiResult={aiResults[word.word] ?? null}
-              aiBusy={aiBusyWord === word.word}
+              aiBusyE={aiBusyE}
+              aiBusyM={aiBusyM}
               testModeEnabled={testModeEnabled}
               testModeDirection={testModeDirection}
               pressedWordName={pressedWordName}
@@ -933,11 +1080,18 @@ function App() {
           onSave={saveApiKey}
         />
       ) : null}
+      {uploadModule ? (
+        <UploadWords
+          currentWords={words}
+          onUploadSuccess={handleUploadSuccess}
+          onClose={() => setUploadModule(false)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function Navbar({ onOpenApiKeyModal, isAdmin }) {
+function Navbar({ onOpenApiKeyModal, isAdmin, setUploadModule }) {
   return (
     <nav className={styles.navbar}>
       <div>
@@ -946,19 +1100,49 @@ function Navbar({ onOpenApiKeyModal, isAdmin }) {
 
       <div className={styles.navActions}>
         <button
+          style={{ padding: "0.65rem", borderRadius: "50%" }}
           type="button"
           className={styles.navActionButton}
           onClick={onOpenApiKeyModal}
         >
-          Gemini API
+          <div className="svg" style={{ width: "24px", height: "24px" }}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 3C12 7.97056 16.0294 12 21 12C16.0294 12 12 16.0294 12 21C12 16.0294 7.97056 12 3 12C7.97056 12 12 7.97056 12 3Z"
+                stroke="#f1f1f1"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              ></path>
+            </svg>
+          </div>
         </button>
 
         {isAdmin && (
           <button
+            style={{ padding: "0.65rem", borderRadius: "50%" }}
             type="button"
             className={`${styles.navActionButton} ${styles.adminBtn}`}
+            onClick={() => setUploadModule(true)}
           >
-            Upload
+            <div className="svg" style={{ width: "24px", height: "24px" }}>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  fillRule="evenodd"
+                  clipRule="evenodd"
+                  d="M11.4697 3.46967C11.7626 3.17678 12.2374 3.17678 12.5303 3.46967L18.5303 9.46967C18.8232 9.76256 18.8232 10.2374 18.5303 10.5303C18.2374 10.8232 17.7626 10.8232 17.4697 10.5303L12.75 5.81066L12.75 20C12.75 20.4142 12.4142 20.75 12 20.75C11.5858 20.75 11.25 20.4142 11.25 20L11.25 5.81066L6.53033 10.5303C6.23744 10.8232 5.76256 10.8232 5.46967 10.5303C5.17678 10.2374 5.17678 9.76256 5.46967 9.46967L11.4697 3.46967Z"
+                  fill="#f1f1f1"
+                ></path>
+              </svg>
+            </div>
           </button>
         )}
       </div>

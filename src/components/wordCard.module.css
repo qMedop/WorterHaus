@@ -11,6 +11,7 @@
 .card.cardLearned {
   border: 1px solid rgba(39, 174, 96, 0.5);
 }
+
 /* 4px Left Border Accents for Noun Gender Semantics */
 .border-der,
 .border-der.cardLearned {
@@ -28,7 +29,9 @@
 .borderNeutral.cardLearned {
   border-left: 5px solid #828282;
 }
-
+.card.hideBorderColor {
+  border-left: 5px solid rgba(172, 172, 172, 0.08) !important;
+}
 /* Gender Pill Colors */
 .der {
   background: rgba(47, 128, 237, 0.08);
@@ -46,7 +49,26 @@
   background: rgba(172, 172, 172, 0.08);
   color: #adb5c0;
 }
-
+.hideBorderColor .articlePill {
+  background: rgba(172, 172, 172, 0.08) !important;
+  color: #adb5c0;
+}
+.blurredState.der {
+  background: rgba(47, 128, 237, 0.08) !important;
+  color: #2f80ed !important;
+}
+.blurredState.die {
+  background: rgba(235, 87, 87, 0.08) !important;
+  color: #eb5757 !important;
+}
+.blurredState.das {
+  background: rgba(39, 174, 96, 0.08) !important;
+  color: #27ae60 !important;
+}
+.blurredState.neutral {
+  background: rgba(172, 172, 172, 0.08) !important;
+  color: #adb5c0 !important;
+}
 /* Header Elements & Title Block Styling */
 .cardHeader {
   padding: 20px 20px 12px 20px;
@@ -106,6 +128,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  height: 36px;
+  width: fit-content;
 }
 .termContainerEN {
   display: flex;
@@ -128,7 +152,6 @@
 /* Premium Blur mechanics inside designated interaction blocks */
 .clickablePromptBox {
   cursor: pointer;
-  border: 1.5px dashed #e5e7eb;
   padding: 8px 12px;
   border-radius: 8px;
   transition: background-color 0.2s ease;
@@ -277,22 +300,24 @@
 }
 
 .blockLabel {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   color: #9ca3af;
   letter-spacing: 0.05em;
+  margin-bottom: 6px;
 }
 
 .blockValue {
-  font-size: 15px;
-  color: #374151;
+  font-size: 16px;
+  color: #f1f1f1;
+  font-weight: 600;
+  margin-left: 4px;
 }
-
-.detailBox {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 14px;
+.pluralAndCompound {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
 }
 
 .conjugationList {
@@ -300,6 +325,7 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 10px;
+  padding: 0 6px;
 }
 
 .conjugationRow {
@@ -307,7 +333,7 @@
   justify-content: space-between;
   font-size: 14px;
   padding-bottom: 6px;
-  border-bottom: 1px dashed #eee;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
 }
 
 .conjugationRow:last-child {
@@ -316,21 +342,18 @@
 }
 
 .conjPerson {
-  color: #6b7280;
+  color: #84878f;
   font-weight: 500;
 }
 
 .conjForm {
-  color: #1f2937;
+  color: #f1f1f1;
   font-weight: 600;
 }
 
 /* AI Engineering Section Features */
 .aiSection {
-  background: linear-gradient(145deg, #f5f3ff 0%, #f0fdf4 100%);
-  border: 1px solid #e0e7ff;
-  border-radius: 12px;
-  padding: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -342,34 +365,30 @@
   align-items: center;
   font-size: 12px;
   font-weight: 700;
-  color: #6d28d9;
 }
 
-.aiHeader em {
+.aiHeader p {
   font-style: normal;
-  font-size: 11px;
-  color: #9ca3af;
-  font-weight: 500;
-}
-
-.aiButtons {
-  display: flex;
-  gap: 8px;
+  font-size: 16px;
+  color: #f1f1f1;
+  font-weight: 700;
+  margin-top: 12px;
 }
 
 .aiButton {
-  flex: 1;
-  background: #ffffff;
-  border: 1px solid #ddd6fe;
-  padding: 7px 10px;
+  color: #f1f1f1;
+  padding: 6px 12px;
+  display: block;
+  margin: 0 auto;
+  background-color: red;
+  background: linear-gradient(90deg, #a86f2577, #46312065);
+  border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #5b21b6;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
 }
-
+.aiButton.mnemonicButton {
+  background: linear-gradient(90deg, #7c3aed77, #2e106565);
+}
 .generatingWrapper {
   display: flex;
   align-items: center;
@@ -407,29 +426,48 @@
 }
 
 .aiResult {
+  background-color: #202736;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f1f1f1;
   margin: 0;
   font-size: 14px;
-  color: #2e1065;
-  background: rgba(255, 255, 255, 0.6);
   padding: 10px;
-  border-radius: 8px;
   line-height: 1.45em;
-  border-left: 3px solid #7c3aed;
+  margin-top: 4px;
 }
-
-/* Usage Notes Section */
-.notesBlock {
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 12px;
-  padding: 14px;
+.aiHolder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.aiBottom {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .notesText {
   margin: 6px 0 0 0;
-  font-size: 13.5px;
-  color: #78350f;
+  font-size: 14px;
+  color: #f1f1f1;
   line-height: 1.5em;
+}
+
+.revealerContainer {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    filter 0.15s ease,
+    opacity 0.15s ease;
+}
+.blurredState p {
+  transition: all 0.15s ease;
+}
+.blurredState p {
+  filter: blur(6px) !important;
+  opacity: 0.35 !important;
 }
 
 .hiddenInTestMode {

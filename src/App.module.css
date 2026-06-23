@@ -70,7 +70,6 @@
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding: 0 12px;
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
 }
@@ -209,7 +208,7 @@
 }
 
 .testModeToggle {
-  display: flex;
+  display: grid;
   gap: 12px;
   padding: 14px;
   border-radius: 18px;
@@ -218,7 +217,8 @@
   cursor: pointer;
   align-items: center;
   justify-content: space-between;
-  height: 70px;
+  min-height: 70px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .testModeToggle input {
@@ -245,6 +245,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  justify-content: end;
 }
 
 .testDirectionButton {
