@@ -1,28 +1,30 @@
 import { motion, AnimatePresence } from "framer-motion";
 import styles from "./wordCard.module.css";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 function WordCard({
   word,
   isAdmin,
   expanded,
-  aiResult,
-  aiBusyM = false,
-  aiBusyE = false,
 
   testModeEnabled,
   testModeDirection,
-  pressedWordName,
   onToggleLearned,
   onDelete,
-  onGenerateAiExample,
-  onGenerateAiMnemonic,
+  requireApiKey,
   onToggleExpanded,
   onPronounce,
-  onPromptPressStart,
-  onPromptPressEnd,
   getConjugation,
+  geminiApiKey,
 }) {
+  const [aiBusyE, setAiBusyE] = useState(false);
+  const [aiBusyM, setAiBusyM] = useState(false);
+
+  const [aiResultE, setAiResultE] = useState(false);
+  const [aiResultM, setAiResultM] = useState(false);
+
+  const activeControllersRef = useRef({ example: null, mnemonic: null });
+
   const articleClass = word.article ? styles[word.article] : styles.neutral;
   const genderBorderClass = word.article
     ? styles[`border-${word.article}`]
@@ -50,6 +52,130 @@ function WordCard({
       }
       return part;
     });
+  }
+  async function generateAiResult(word, mode) {
+    // 1. Initial validation checks with verbose logging
+    console.log(`[AI-Init] Triggered for "${word?.word}" in mode: [${mode}]`);
+
+    if (!requireApiKey()) {
+      console.error(
+        "[AI-Auth] Request blocked: API Key missing or requireApiKey() failed.",
+      );
+      return;
+    }
+
+    const isBusy = mode === "example" ? aiBusyE : aiBusyM;
+    if (isBusy) {
+      console.warn(
+        `[AI-Spam] Request ignored: Already processing an "${mode}" request.`,
+      );
+      return;
+    }
+
+    // 2. Cancel any previous unfinished request for this exact mode (Debounce/Cleanup)
+    if (activeControllersRef.current[mode]) {
+      console.log(`[AI-Cleanup] Aborting previous pending ${mode} request.`);
+      activeControllersRef.current[mode].abort();
+    }
+
+    // Create a brand new abort controller for this specific request
+    const controller = new AbortController();
+    activeControllersRef.current[mode] = controller;
+
+    // 3. Set loading UI states dynamically
+    const setBusy = mode === "example" ? setAiBusyE : setAiBusyM;
+    setBusy(true);
+
+    // 4. Construct strictly optimized prompts
+    const systemContexts = {
+      example: `You are a German teacher. Create ONE short and natural German sentence (A1-A2 level) using the word "${word.word}". Rules: - Use the word naturally. - Use everyday situations. - Keep the sentence under 12 words. - Make it grammatically correct. - Put the German sentence on the first line. - Put the English translation on the second line. - Do not explain grammar. - Do not add bullet points. - Do not add extra text. Word: ${word.word} Meaning: ${word.translation}`,
+      mnemonic: `You are helping an English speaker memorize German vocabulary. Create ONE short and memorable mnemonic for: German word: "${word.word}" Meaning: "${word.translation}" Rules: - Maximum 2 sentences. - Make it funny, vivid, or absurd. - Use sound similarities when possible. - Focus on helping memory, not linguistic accuracy. - Do not explain the mnemonic. - Return only the mnemonic.`,
+    };
+
+    const prompt = systemContexts[mode];
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${geminiApiKey}`;
+
+    // 5. Exponential Backoff Retry Loop
+    const MAX_RETRIES = 3;
+    let response = null;
+
+    try {
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          console.log(
+            `[AI-Fetch] Dispatching to Gemini 3.1 Flash Lite (Attempt ${attempt + 1}/${MAX_RETRIES})...`,
+          );
+
+          response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal, // Attaches the cancel switch
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+            }),
+          });
+
+          if (response.ok) break; // Break out of retry loop if successful
+
+          // Handle rate limits or temporary server overloads (429 or 503)
+          if (response.status === 429 || response.status === 503) {
+            const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s linear exponential backoff
+            console.warn(
+              `[AI-Retry] Server busy (${response.status}). Retrying in ${delay}ms...`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          } else {
+            // If it's a hard error (like a 400 bad syntax or 404), don't waste time retrying
+            throw new Error(`HTTP Error ${response.status}`);
+          }
+        } catch (fetchErr) {
+          if (fetchErr.name === "AbortError") {
+            console.log(
+              `[AI-Aborted] Request successfully cancelled by user/system.`,
+            );
+            return; // Stop entirely because the user clicked something else
+          }
+          if (attempt === MAX_RETRIES - 1) throw fetchErr; // Out of retries, throw to main catch block
+        }
+      }
+
+      if (!response?.ok) {
+        throw new Error(
+          `Gemini gateway failed with status ${response?.status}`,
+        );
+      }
+
+      // 6. Parse and validate the response payload
+      const data = await response.json();
+      const resultText =
+        data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+      if (!resultText) {
+        throw new Error(
+          "Payload parsed successfully but content parts returned empty.",
+        );
+      }
+      console.log(resultText);
+      // 7. Update state cleanly using a non-mutating functional approach
+      console.log(`[AI-Success] Received payload for "${word.word}"`);
+      if (mode === "example") {
+        setAiResultE({ resultText });
+      } else if (mode === "mnemonic") {
+        setAiResultM({ resultText });
+      }
+    } catch (error) {
+      console.error(
+        "[AI-Failure] Runtime exception during pipeline execution:",
+        error,
+      );
+      // Explicitly notify your user UI component if needed here
+    } finally {
+      // 8. Final teardown guarantees loaders switch off and controllers clear out
+      setBusy(false);
+      if (activeControllersRef.current[mode] === controller) {
+        activeControllersRef.current[mode] = null;
+      }
+    }
   }
   return (
     <article
@@ -228,15 +354,19 @@ function WordCard({
                     <div className={styles.aiBottom}>
                       <span className={styles.blockLabel}>Example:</span>
                       <div>
-                        {aiResult?.example ? (
+                        {aiResultE ? (
                           <p className={styles.aiResult}>
-                            {formatMarkdownText(aiResult.example)}
+                            {formatMarkdownText(aiResultE.resultText)}
                           </p>
                         ) : (
                           <button
                             type="button"
                             className={styles.aiButton}
-                            onClick={onGenerateAiExample}
+                            onClick={generateAiResult.bind(
+                              null,
+                              word,
+                              "example",
+                            )}
                           >
                             {aiBusyE ? "Thinking" : "Generate 💡"}
                           </button>
@@ -246,15 +376,19 @@ function WordCard({
                     <div className={styles.aiBottom}>
                       <span className={styles.blockLabel}>Mnemonic:</span>
                       <div>
-                        {aiResult?.mnemonic ? (
+                        {aiResultM ? (
                           <p className={styles.aiResult}>
-                            {formatMarkdownText(aiResult.mnemonic)}
+                            {formatMarkdownText(aiResultM.resultText)}
                           </p>
                         ) : (
                           <button
                             type="button"
                             className={`${styles.aiButton} ${styles.mnemonicButton}`}
-                            onClick={onGenerateAiMnemonic}
+                            onClick={generateAiResult.bind(
+                              null,
+                              word,
+                              "mnemonic",
+                            )}
                           >
                             {aiBusyM ? "Thinking" : "Generate 🧠"}
                           </button>

@@ -91,13 +91,8 @@ function App() {
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [uploadModule, setUploadModule] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
-  const [geminiApiKey, setGeminiApiKey] = useState(
-    () => localStorage.getItem(geminiApiKeyStorageKey) ?? "",
-  );
-  const [aiBusyE, setAiBusyE] = useState(false);
-  const [aiBusyM, setAiBusyM] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState();
 
-  const [aiResults, setAiResults] = useState({});
   const filterPanelRef = useRef(null);
   const loadMoreRef = useRef(null);
 
@@ -210,7 +205,6 @@ function App() {
               remoteKey = await loadRemoteApiKey(currentUser.uid);
               if (remoteKey && !cancelled) {
                 setGeminiApiKey(remoteKey);
-                localStorage.setItem(geminiApiKeyStorageKey, remoteKey);
               }
             }
           } catch (e) {
@@ -626,7 +620,6 @@ function App() {
   async function saveApiKey() {
     const trimmedKey = apiKeyDraft.trim();
     setGeminiApiKey(trimmedKey);
-    localStorage.setItem(geminiApiKeyStorageKey, trimmedKey);
     setApiKeyModalOpen(false);
 
     // Persist to user table backend if authenticated and online
@@ -652,89 +645,6 @@ function App() {
     }
 
     return true;
-  }
-
-  async function generateAiResult(word, mode) {
-    if (!requireApiKey()) return;
-
-    // Prevent spam clicks
-    if ((mode === "example" && aiBusyE) || (mode === "mnemonic" && aiBusyM)) {
-      return;
-    }
-
-    if (mode === "example") {
-      setAiBusyE(true);
-    } else {
-      setAiBusyM(true);
-    }
-
-    try {
-      const examplePrompt = `You are a German teacher. Create ONE short and natural German sentence (A1-A2 level) using the word "${word.word}". Rules: - Use the word naturally. - Use everyday situations. - Keep the sentence under 12 words. - Make it grammatically correct. - Put the German sentence on the first line. - Put the English translation on the second line. - Do not explain grammar. - Do not add bullet points. - Do not add extra text. Word: ${word.word} Meaning: ${word.translation}`;
-      const mnemonicPrompt = `You are helping an English speaker memorize German vocabulary. Create ONE short and memorable mnemonic for: German word: "${word.word}" Meaning: "${word.translation}" Rules: - Maximum 2 sentences. - Make it funny, vivid, or absurd. - Use sound similarities when possible. - Focus on helping memory, not linguistic accuracy. - Do not explain the mnemonic. - Return only the mnemonic.`;
-      const prompt = mode === "example" ? examplePrompt : mnemonicPrompt;
-
-      let response;
-
-      // Retry up to 3 times for temporary Gemini outages
-      for (let attempt = 0; attempt < 3; attempt++) {
-        response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [{ text: prompt }],
-                },
-              ],
-            }),
-          },
-        );
-
-        if (response.ok) break;
-
-        if (response.status !== 503) {
-          throw new Error(`Gemini API Error Status: ${response.status}`);
-        }
-
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
-      }
-
-      if (!response?.ok) {
-        throw new Error("Gemini unavailable");
-      }
-
-      const data = await response.json();
-
-      const resultText =
-        data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-      if (!resultText) {
-        throw new Error("Empty Gemini response");
-      }
-
-      setAiResults((currentResults) => ({
-        ...currentResults,
-        [word.word]: {
-          ...(currentResults[word.word] ?? {}),
-          [mode]: resultText,
-        },
-      }));
-    } catch (error) {
-      console.error("AI Generation failed:", error);
-
-      // Do nothing visible to the user.
-      // Leave result empty so they can click again.
-    } finally {
-      if (mode === "example") {
-        setAiBusyE(false);
-      } else {
-        setAiBusyM(false);
-      }
-    }
   }
 
   function getConjugation(word, key) {
@@ -987,21 +897,18 @@ function App() {
               word={word}
               isAdmin={isAdmin}
               expanded={expandedWords.has(word.word)}
-              aiResult={aiResults[word.word] ?? null}
-              aiBusyE={aiBusyE}
-              aiBusyM={aiBusyM}
+              requireApiKey={requireApiKey}
               testModeEnabled={testModeEnabled}
               testModeDirection={testModeDirection}
               pressedWordName={pressedWordName}
               onToggleLearned={() => toggleLearned(word.word)}
               onDelete={() => deleteWord(word.word)}
-              onGenerateAiExample={() => generateAiResult(word, "example")}
-              onGenerateAiMnemonic={() => generateAiResult(word, "mnemonic")}
               onToggleExpanded={() => toggleWordExpanded(word.word)}
-              onPronounce={(word) => pronounceWord(word)}
+              onPronounce={pronounceWord}
               onPromptPressStart={() => handlePromptPressStart(word.word)}
               onPromptPressEnd={handlePromptPressEnd}
               getConjugation={getConjugation}
+              geminiApiKey={geminiApiKey}
             />
           ))}
         </section>
