@@ -8,9 +8,21 @@ const ALLOWED_WORD_KEYS = [
   "translation",
   "compound_breakdown",
   "type",
+
   "article",
-  "conjugations",
   "plural",
+  "genitive",
+
+  "conjugations",
+  "past",
+  "participle",
+  "auxiliary",
+
+  "comparative",
+  "superlative",
+
+  "reflexive",
+
   "notes",
 ];
 
@@ -96,8 +108,6 @@ function UploadWords({ currentWords = [], onUploadSuccess, onClose }) {
       ALLOWED_WORD_KEYS.forEach((key) => {
         if (rawWord[key] !== undefined) {
           cleaned[key] = rawWord[key];
-        } else {
-          cleaned[key] = null;
         }
       });
 
