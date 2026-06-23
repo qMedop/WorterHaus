@@ -1,0 +1,51 @@
+:root {
+  --bg: #0f1117;
+  --popup: #1a1f2b;
+  --surface: #252b3b;
+
+  --der: #4f8cff;
+  --die: #ff5a6e;
+  --das: #34d399;
+  --neutral: #9ca3af;
+
+  --text: #f3f4f6;
+  --text-muted: #b8c0cc;
+  --border: #343b4e;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg);
+  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+}
+
+svg {
+  fill: var(--text);
+  width: 100%;
+  height: 100%;
+}
+
+.svg {
+  width: 32px;
+  height: 32px;
+}
+
+button {
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
