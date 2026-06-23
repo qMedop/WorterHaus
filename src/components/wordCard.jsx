@@ -63,7 +63,7 @@ function WordCard({
           <div className={styles.cardTopMetadataRow}>
             <div>
               <ArticleRevealer
-                isTestActive={testModeEnabled}
+                isTestActive={testModeEnabled && testModeDirection === "en-du"}
                 articleValue={word.article}
                 articleClass={styles.articlePill + ` ${articleClass}`}
               />
@@ -100,7 +100,7 @@ function WordCard({
               className={styles.termContainer}
             >
               <p className={styles.shouldBlurGerman}>{word.word}</p>
-              {testModeEnabled && testModeDirection === "du-en" && (
+              {!(testModeEnabled && testModeDirection === "en-du") && (
                 <SoundIcon onPronounce={onPronounce} word={word} />
               )}
             </BlurRevealer>
@@ -148,7 +148,18 @@ function WordCard({
                 testModeDirection === "en-du" ? null : word.plural ? (
                   <div className={styles.fullWidthBlock}>
                     <span className={styles.blockLabel}>Plural Form:</span>
-                    <span className={styles.blockValue}>{word.plural}</span>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <span className={styles.blockValue}>{word.plural}</span>
+                      {!(testModeEnabled && testModeDirection === "en-du") && (
+                        <SoundIcon onPronounce={onPronounce} word={word} />
+                      )}
+                    </div>
                   </div>
                 ) : null}
 

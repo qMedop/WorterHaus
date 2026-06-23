@@ -23,85 +23,11 @@ import UploadWords from "./components/uploadWords";
 
 const appStateStorageKey = "worterhaus.app-state";
 const geminiApiKeyStorageKey = "worterhaus.gemini-api-key";
-const wordBatchSize = 4;
+const wordBatchSize = 8;
 
 const ADMIN_UID = "P2xazy0GriXlkjj0QAobkaZ6bxt1";
 
-const defaultWords = [
-  {
-    word: "Apfel",
-    article: "der",
-    type: "noun",
-    translation: "apple",
-    plural: "Äpfel",
-    compound_breakdown: null,
-    conjugations: null,
-    notes: "Common masculine food word.",
-    category: "food",
-    tags: ["food", "fruit", "everyday"],
-    learned: false,
-  },
-  {
-    word: "Bäckerei",
-    article: "die",
-    type: "noun",
-    translation: "bakery",
-    plural: "Bäckereien",
-    compound_breakdown: null,
-    conjugations: null,
-    notes: "Nouns ending in -ei are always 'die'.",
-    category: "places",
-    tags: ["shop", "food", "city"],
-    learned: false,
-  },
-  {
-    word: "Auto",
-    article: "das",
-    type: "noun",
-    translation: "car",
-    plural: "Autos",
-    compound_breakdown: null,
-    conjugations: null,
-    notes: "Simple neuter noun.",
-    category: "transport",
-    tags: ["travel", "everyday", "vehicle"],
-    learned: false,
-  },
-  {
-    word: "Hochhaus",
-    article: "das",
-    type: "noun",
-    translation: "skyscraper",
-    plural: "Hochhäuser",
-    compound_breakdown: ["hoch", "das Haus"],
-    conjugations: null,
-    notes: "Compound word: high + house.",
-    category: "buildings",
-    tags: ["city", "compound", "architecture"],
-    learned: false,
-  },
-  {
-    word: "sehen",
-    article: null,
-    type: "verb",
-    translation: "to see",
-    plural: null,
-    compound_breakdown: null,
-    conjugations: {
-      ich: "sehe",
-      du: "siehst",
-      er: "sieht",
-      sie: "sieht",
-      es: "sieht",
-      wir: "sehen",
-      Sie_sie: "sehen",
-    },
-    notes: "Irregular verb with an e-to-ie vowel change.",
-    category: "actions",
-    tags: ["irregular", "everyday", "sense"],
-    learned: false,
-  },
-];
+const defaultWords = [];
 
 const learnedFilterOptions = [
   { value: "all", label: "All" },
@@ -174,6 +100,32 @@ function App() {
   const [aiResults, setAiResults] = useState({});
   const filterPanelRef = useRef(null);
   const loadMoreRef = useRef(null);
+
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIfMobile = () => {
+      const mobileRegex =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent,
+        );
+      const isMacTouch =
+        navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1;
+      const mobileDeviceDetected = mobileRegex || isMacTouch;
+
+      setIsMobile(mobileDeviceDetected);
+
+      if (mobileDeviceDetected) {
+        document.body.classList.add("mobile");
+      } else {
+        document.body.classList.remove("mobile");
+      }
+    };
+
+    checkIfMobile();
+    window.addEventListener("resize", checkIfMobile);
+    return () => window.removeEventListener("resize", checkIfMobile);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {

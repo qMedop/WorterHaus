@@ -27,6 +27,13 @@ body {
   color: var(--text);
   min-height: 100vh;
 }
+body.mobile div,
+body.mobile button,
+body.mobile input,
+body.mobile select,
+body.mobile textarea {
+  cursor: default;
+}
 
 svg {
   width: 100%;

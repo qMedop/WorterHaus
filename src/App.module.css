@@ -338,9 +338,9 @@
   right: 0;
   z-index: 5;
   overflow: hidden;
-  max-height: 0;
   opacity: 0;
   transform: translateY(-8px) scale(0.985);
+  max-height: 340px;
   transition:
     max-height 220ms ease,
     opacity 180ms ease,
@@ -349,7 +349,6 @@
 }
 
 .dropdownOpen .dropdownMenuWrap {
-  max-height: 340px;
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
