@@ -259,15 +259,20 @@
   border-radius: 50%;
   border: 3px solid #4b5563;
 }
+.learnedChip.actionChipLearned::before {
+  border-color: #34d399;
+  background-color: #27ae60;
+}
 .chipIcon {
   width: 20px;
   height: 20px;
 }
 .learnedChip .chipIcon {
   opacity: 0;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   transition: 200ms;
+  z-index: 1;
 }
 .learnedChip.actionChipLearned .chipIcon {
   opacity: 1;
