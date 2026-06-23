@@ -480,7 +480,7 @@ function SoundIcon({ onPronounce, word }) {
       className={styles.soundButton}
       onClick={(e) => {
         e.stopPropagation();
-        onPronounce();
+        onPronounce(word);
       }}
       aria-label={`Pronounce ${word}`}
     >
