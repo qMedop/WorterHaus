@@ -6,7 +6,6 @@ function WordCard({
   word,
   isAdmin,
   expanded,
-
   testModeEnabled,
   testModeDirection,
   onToggleLearned,
@@ -34,13 +33,9 @@ function WordCard({
 
   function formatMarkdownText(text) {
     if (!text) return "";
-
-    // Split text by the markdown bold marker **
     const parts = text.split(/(\*\*.*?\*\*)/g);
-
     return parts.map((part, index) => {
       if (part.startsWith("**") && part.endsWith("**")) {
-        // Clean off the asterisks and return a stylized bold element
         return (
           <strong
             key={index}
@@ -53,8 +48,8 @@ function WordCard({
       return part;
     });
   }
+
   async function generateAiResult(word, mode) {
-    // 1. Initial validation checks with verbose logging
     console.log(`[AI-Init] Triggered for "${word?.word}" in mode: [${mode}]`);
 
     if (!requireApiKey()) {
@@ -72,21 +67,17 @@ function WordCard({
       return;
     }
 
-    // 2. Cancel any previous unfinished request for this exact mode (Debounce/Cleanup)
     if (activeControllersRef.current[mode]) {
       console.log(`[AI-Cleanup] Aborting previous pending ${mode} request.`);
       activeControllersRef.current[mode].abort();
     }
 
-    // Create a brand new abort controller for this specific request
     const controller = new AbortController();
     activeControllersRef.current[mode] = controller;
 
-    // 3. Set loading UI states dynamically
     const setBusy = mode === "example" ? setAiBusyE : setAiBusyM;
     setBusy(true);
 
-    // 4. Construct strictly optimized prompts
     const systemContexts = {
       example: `You are a German teacher. Create ONE short and natural German sentence (A1-A2 level) using the word "${word.word}". Rules: - Use the word naturally. - Use everyday situations. - Keep the sentence under 12 words. - Make it grammatically correct. - Put the German sentence on the first line. - Put the English translation on the second line. - Do not explain grammar. - Do not add bullet points. - Do not add extra text. Word: ${word.word} Meaning: ${word.translation}`,
       mnemonic: `You are helping an English speaker memorize German vocabulary. Create ONE short and memorable mnemonic for: German word: "${word.word}" Meaning: "${word.translation}" Rules: - Maximum 2 sentences. - Make it funny, vivid, or absurd. - Use sound similarities when possible. - Focus on helping memory, not linguistic accuracy. - Do not explain the mnemonic. - Return only the mnemonic.`,
@@ -95,7 +86,6 @@ function WordCard({
     const prompt = systemContexts[mode];
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${geminiApiKey}`;
 
-    // 5. Exponential Backoff Retry Loop
     const MAX_RETRIES = 3;
     let response = null;
 
@@ -109,23 +99,21 @@ function WordCard({
           response = await fetch(API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            signal: controller.signal, // Attaches the cancel switch
+            signal: controller.signal,
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
             }),
           });
 
-          if (response.ok) break; // Break out of retry loop if successful
+          if (response.ok) break;
 
-          // Handle rate limits or temporary server overloads (429 or 503)
           if (response.status === 429 || response.status === 503) {
-            const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s linear exponential backoff
+            const delay = Math.pow(2, attempt) * 1000;
             console.warn(
               `[AI-Retry] Server busy (${response.status}). Retrying in ${delay}ms...`,
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
           } else {
-            // If it's a hard error (like a 400 bad syntax or 404), don't waste time retrying
             throw new Error(`HTTP Error ${response.status}`);
           }
         } catch (fetchErr) {
@@ -133,9 +121,9 @@ function WordCard({
             console.log(
               `[AI-Aborted] Request successfully cancelled by user/system.`,
             );
-            return; // Stop entirely because the user clicked something else
+            return;
           }
-          if (attempt === MAX_RETRIES - 1) throw fetchErr; // Out of retries, throw to main catch block
+          if (attempt === MAX_RETRIES - 1) throw fetchErr;
         }
       }
 
@@ -145,7 +133,6 @@ function WordCard({
         );
       }
 
-      // 6. Parse and validate the response payload
       const data = await response.json();
       const resultText =
         data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
@@ -155,9 +142,7 @@ function WordCard({
           "Payload parsed successfully but content parts returned empty.",
         );
       }
-      console.log(resultText);
-      // 7. Update state cleanly using a non-mutating functional approach
-      console.log(`[AI-Success] Received payload for "${word.word}"`);
+
       if (mode === "example") {
         setAiResultE({ resultText });
       } else if (mode === "mnemonic") {
@@ -168,15 +153,14 @@ function WordCard({
         "[AI-Failure] Runtime exception during pipeline execution:",
         error,
       );
-      // Explicitly notify your user UI component if needed here
     } finally {
-      // 8. Final teardown guarantees loaders switch off and controllers clear out
       setBusy(false);
       if (activeControllersRef.current[mode] === controller) {
         activeControllersRef.current[mode] = null;
       }
     }
   }
+
   return (
     <article
       className={`${styles.card} ${expanded ? styles.cardExpanded : ""} ${
@@ -194,7 +178,12 @@ function WordCard({
                 articleClass={styles.articlePill + ` ${articleClass}`}
               />
               {word.type && (
-                <span className={styles.wordTypeLabel}>{word.type}</span>
+                <span className={styles.wordTypeLabel}>
+                  {word.type}{" "}
+                  {word.reflexive && (
+                    <span className={styles.reflexiveLabel}>(reflexiv)</span>
+                  )}
+                </span>
               )}
             </div>
             <div className={styles.topRightActions}>
@@ -232,7 +221,6 @@ function WordCard({
             </BlurRevealer>
 
             {/* English Target Translation Side */}
-
             <BlurRevealer
               isTestActive={testModeEnabled && testModeDirection === "du-en"}
               className={styles.termContainerEN}
@@ -241,10 +229,9 @@ function WordCard({
             </BlurRevealer>
           </div>
         </div>
-
-        {/* Right utilities tray */}
       </div>
-      {/* Clean Framer-Motion Accordion Component with Conditional Content Rendering */}
+
+      {/* Accordion Component */}
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div
@@ -269,42 +256,114 @@ function WordCard({
             className={styles.cardBodyWrapper}
           >
             <div className={styles.cardBodyInner}>
-              <div className={styles.pluralAndCompound}>
-                {testModeEnabled &&
-                testModeDirection === "en-du" ? null : word.plural ? (
-                  <div className={styles.fullWidthBlock}>
-                    <span className={styles.blockLabel}>Plural Form:</span>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px",
-                      }}
-                    >
-                      <span className={styles.blockValue}>{word.plural}</span>
-                      {!(testModeEnabled && testModeDirection === "en-du") && (
+              {/* Noun Info Grid */}
+              {word.type === "noun" && !(testModeEnabled && showENPrompt) && (
+                <div className={styles.pluralAndCompound}>
+                  {word.plural && (
+                    <div className={styles.fullWidthBlock}>
+                      <span className={styles.blockLabel}>Plural Form:</span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <span className={styles.blockValue}>{word.plural}</span>
                         <SoundIcon
                           onPronounce={onPronounce}
                           word={word.plural}
                         />
-                      )}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  )}
+                  {word.genitive && (
+                    <div className={styles.fullWidthBlock}>
+                      <span className={styles.blockLabel}>Genitive:</span>
+                      <span className={styles.blockValue}>
+                        des {word.genitive}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
-                {testModeEnabled &&
-                testModeDirection ===
-                  "en-du" ? null : word.compound_breakdown ? (
+              {/* Verb Tense Blocks */}
+              {word.type === "verb" &&
+                !(testModeEnabled && showENPrompt) &&
+                (word.past || word.participle || word.auxiliary) && (
+                  <div className={styles.verbTenseContainer}>
+                    {word.past && (
+                      <div className={styles.tenseBlock}>
+                        <span className={styles.blockLabel}>
+                          Präteritum (Past):
+                        </span>
+                        <span className={styles.blockValue}>{word.past}</span>
+                      </div>
+                    )}
+                    {word.participle && (
+                      <div className={styles.tenseBlock}>
+                        <span className={styles.blockLabel}>Partizip II:</span>
+                        <span className={styles.blockValue}>
+                          {word.participle}
+                        </span>
+                      </div>
+                    )}
+                    {word.auxiliary && (
+                      <div className={styles.tenseBlock}>
+                        <span className={styles.blockLabel}>Auxiliary:</span>
+                        <span
+                          className={styles.blockValue}
+                          style={{ fontStyle: "italic" }}
+                        >
+                          {word.auxiliary}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {/* Adjective Gradation Blocks */}
+              {word.type === "adjective" &&
+                !(testModeEnabled && showENPrompt) &&
+                (word.comparative || word.superlative) && (
+                  <div className={styles.adjectiveGradationContainer}>
+                    {word.comparative && (
+                      <div className={styles.tenseBlock}>
+                        <span className={styles.blockLabel}>Komparativ:</span>
+                        <span className={styles.blockValue}>
+                          {word.comparative}
+                        </span>
+                      </div>
+                    )}
+                    {word.superlative && (
+                      <div className={styles.tenseBlock}>
+                        <span className={styles.blockLabel}>Superlativ:</span>
+                        <span className={styles.blockValue}>
+                          {word.superlative}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {/* Compound Breakdown */}
+              {word.compound_breakdown &&
+                !(testModeEnabled && showENPrompt) && (
                   <div className={styles.fullWidthBlock}>
                     <span className={styles.blockLabel}>
                       Compound Components:
                     </span>
-                    <span className={styles.blockValue}>
+                    <span
+                      className={styles.blockValue}
+                      style={{ letterSpacing: "0.5px" }}
+                    >
                       {word.compound_breakdown}
                     </span>
                   </div>
-                ) : null}
-              </div>
+                )}
+
+              {/* Verb Conjugation Table (Matches structure with "er_sie_es" data fallback correction) */}
               {word.conjugations &&
                 Object.keys(word.conjugations).length > 0 && (
                   <div className={styles.detailBox}>
@@ -315,26 +374,24 @@ function WordCard({
                       {[
                         ["ich", getConjugation(word, "ich")],
                         ["du", getConjugation(word, "du")],
-                        ["er/sie/es", getConjugation(word, "er")],
+                        [
+                          "er/sie/es",
+                          getConjugation(word, "er_sie_es") ||
+                            getConjugation(word, "er"),
+                        ],
                         ["wir", getConjugation(word, "wir")],
                         ["ihr", getConjugation(word, "ihr")],
                         ["Sie/sie", getConjugation(word, "Sie_sie")],
                       ].map(([person, form]) => (
                         <div
                           key={person}
-                          className={`${styles.conjugationRow} ${
-                            testModeEnabled && testModeDirection === "en-du"
-                              ? styles.blured
-                              : ""
-                          }`}
+                          className={`${styles.conjugationRow} ${testModeEnabled && showENPrompt ? styles.blured : ""}`}
                         >
                           <strong className={styles.conjPerson}>
                             {person}
                           </strong>
                           <BlurRevealer
-                            isTestActive={
-                              testModeEnabled && testModeDirection === "en-du"
-                            }
+                            isTestActive={testModeEnabled && showENPrompt}
                           >
                             <p className={styles.conjForm}>{form ?? "—"}</p>
                           </BlurRevealer>
@@ -344,12 +401,12 @@ function WordCard({
                   </div>
                 )}
 
-              {testModeEnabled && testModeDirection === "en-du" ? null : (
+              {/* AI Study Assistants Section */}
+              {!(testModeEnabled && showENPrompt) && (
                 <div className={styles.aiSection}>
                   <div className={styles.aiHeader}>
                     <p>AI Study Assistants</p>
                   </div>
-
                   <div className={styles.aiHolder}>
                     <div className={styles.aiBottom}>
                       <span className={styles.blockLabel}>Example:</span>
@@ -399,18 +456,45 @@ function WordCard({
                 </div>
               )}
 
-              {testModeEnabled &&
-              testModeDirection === "en-du" ? null : word.notes ? (
-                <div className={styles.notesBlock}>
-                  <span className={styles.blockLabel}>Note:</span>
-                  <p className={styles.notesText}>{word.notes}</p>
-                </div>
-              ) : null}
+              {/* Array-Based Notes Render Block */}
+              {word.notes &&
+                Array.isArray(word.notes) &&
+                word.notes.length > 0 &&
+                !(testModeEnabled && showENPrompt) && (
+                  <div className={styles.notesBlock}>
+                    <span className={styles.blockLabel}>Grammar Tags:</span>
+                    <div
+                      className={styles.notesTagCloud}
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "6px",
+                        marginTop: "4px",
+                      }}
+                    >
+                      {word.notes.map((note, idx) => (
+                        <span
+                          key={idx}
+                          className={styles.grammarTag}
+                          style={{
+                            padding: "3px 8px",
+                            borderRadius: "4px",
+                            background: "rgba(255,255,255,0.08)",
+                            fontSize: "0.85em",
+                          }}
+                        >
+                          {note}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-      {/* Floating Action Chips Row */}
+
+      {/* Action Chips Row */}
       <div className={styles.cardActionsRow}>
         <button
           type="button"
