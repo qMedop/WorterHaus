@@ -655,7 +655,10 @@ function App() {
   }
 
   async function generateAiResult(word, mode) {
-    if (!requireApiKey()) {
+    if (!requireApiKey()) return;
+
+    // Prevent spam clicks
+    if ((mode === "example" && aiBusyE) || (mode === "mnemonic" && aiBusyM)) {
       return;
     }
 
@@ -666,100 +669,65 @@ function App() {
     }
 
     try {
-      // Craft clean engineering prompts for structured responses
-      const examplePrompt = `
-        You are a German teacher.
-
-        Create ONE short and natural German sentence (A1-A2 level) using the word "${word.word}".
-
-        Rules:
-        - Use the word naturally.
-        - Use everyday situations.
-        - Keep the sentence under 12 words.
-        - Make it grammatically correct.
-        - Put the German sentence on the first line.
-        - Put the English translation on the second line.
-        - Do not explain grammar.
-        - Do not add bullet points.
-        - Do not add extra text.
-
-        Word: ${word.word}
-        Meaning: ${word.translation}
-        `;
-
-      const mnemonicPrompt = `
-        You are helping an English speaker memorize German vocabulary.
-
-        Create ONE short and memorable mnemonic for:
-
-        German word: "${word.word}"
-        Meaning: "${word.translation}"
-
-        Rules:
-        - Maximum 2 sentences.
-        - Make it funny, vivid, or absurd.
-        - Use sound similarities when possible.
-        - Focus on helping memory, not linguistic accuracy.
-        - Do not explain the mnemonic.
-        - Return only the mnemonic.
-        `;
-
+      const examplePrompt = `You are a German teacher. Create ONE short and natural German sentence (A1-A2 level) using the word "${word.word}". Rules: - Use the word naturally. - Use everyday situations. - Keep the sentence under 12 words. - Make it grammatically correct. - Put the German sentence on the first line. - Put the English translation on the second line. - Do not explain grammar. - Do not add bullet points. - Do not add extra text. Word: ${word.word} Meaning: ${word.translation}`;
+      const mnemonicPrompt = `You are helping an English speaker memorize German vocabulary. Create ONE short and memorable mnemonic for: German word: "${word.word}" Meaning: "${word.translation}" Rules: - Maximum 2 sentences. - Make it funny, vivid, or absurd. - Use sound similarities when possible. - Focus on helping memory, not linguistic accuracy. - Do not explain the mnemonic. - Return only the mnemonic.`;
       const prompt = mode === "example" ? examplePrompt : mnemonicPrompt;
 
-      // Dispatch request directly to official Google Gemini API Endpoint
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: prompt,
-                  },
-                ],
-              },
-            ],
-          }),
-        },
-      );
+      let response;
 
-      if (!response.ok) {
-        throw new Error(`Gemini API Error Status: ${response.status}`);
+      // Retry up to 3 times for temporary Gemini outages
+      for (let attempt = 0; attempt < 3; attempt++) {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [{ text: prompt }],
+                },
+              ],
+            }),
+          },
+        );
+
+        if (response.ok) break;
+
+        if (response.status !== 503) {
+          throw new Error(`Gemini API Error Status: ${response.status}`);
+        }
+
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
+
+      if (!response?.ok) {
+        throw new Error("Gemini unavailable");
       }
 
       const data = await response.json();
 
-      // Parse official Gemini response payload structure
       const resultText =
-        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "No response text found.";
+        data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
-      // Commit result smoothly to your UI state
+      if (!resultText) {
+        throw new Error("Empty Gemini response");
+      }
+
       setAiResults((currentResults) => ({
         ...currentResults,
         [word.word]: {
           ...(currentResults[word.word] ?? {}),
-          [mode]: resultText.trim(),
+          [mode]: resultText,
         },
       }));
     } catch (error) {
       console.error("AI Generation failed:", error);
-      setSyncMessage(
-        "Gemini generation failed. Please verify your API Key and network.",
-      );
 
-      setAiResults((currentResults) => ({
-        ...currentResults,
-        [word.word]: {
-          ...(currentResults[word.word] ?? {}),
-          [mode]: `❌ Error: ${error instanceof Error ? error.message : "Couldn't reach Gemini."}`,
-        },
-      }));
+      // Do nothing visible to the user.
+      // Leave result empty so they can click again.
     } finally {
       if (mode === "example") {
         setAiBusyE(false);
@@ -1030,7 +998,7 @@ function App() {
               onGenerateAiExample={() => generateAiResult(word, "example")}
               onGenerateAiMnemonic={() => generateAiResult(word, "mnemonic")}
               onToggleExpanded={() => toggleWordExpanded(word.word)}
-              onPronounce={() => pronounceWord(word.word)}
+              onPronounce={(word) => pronounceWord(word)}
               onPromptPressStart={() => handlePromptPressStart(word.word)}
               onPromptPressEnd={handlePromptPressEnd}
               getConjugation={getConjugation}

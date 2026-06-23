@@ -101,7 +101,7 @@ function WordCard({
             >
               <p className={styles.shouldBlurGerman}>{word.word}</p>
               {!(testModeEnabled && testModeDirection === "en-du") && (
-                <SoundIcon onPronounce={onPronounce} word={word} />
+                <SoundIcon onPronounce={onPronounce} word={word.word} />
               )}
             </BlurRevealer>
 
@@ -157,7 +157,10 @@ function WordCard({
                     >
                       <span className={styles.blockValue}>{word.plural}</span>
                       {!(testModeEnabled && testModeDirection === "en-du") && (
-                        <SoundIcon onPronounce={onPronounce} word={word} />
+                        <SoundIcon
+                          onPronounce={onPronounce}
+                          word={word.plural}
+                        />
                       )}
                     </div>
                   </div>
@@ -345,7 +348,7 @@ function SoundIcon({ onPronounce, word }) {
         e.stopPropagation();
         onPronounce();
       }}
-      aria-label={`Pronounce ${word.word}`}
+      aria-label={`Pronounce ${word}`}
     >
       <svg
         viewBox="0 0 24 24"
