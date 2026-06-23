@@ -1,7 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./firebase/firebase";
+import {
+  deleteRemoteWord,
+  loadRemoteLearnedWords,
+  loadRemoteWords,
+  saveRemoteLearnedWords,
+  saveRemoteWord,
+} from "./firebase/firebase";
+import {
+  loadCachedLearnedWords,
+  loadCachedWords,
+  saveCachedLearnedWords,
+  saveCachedWords,
+} from "./lib/userDb";
 import styles from "./App.module.css";
 
-const storageKey = "worterhaus.words";
 const appStateStorageKey = "worterhaus.app-state";
 const geminiApiKeyStorageKey = "worterhaus.gemini-api-key";
 const wordBatchSize = 4;
@@ -102,32 +117,32 @@ const articleFilterOptions = [
   { value: "das", label: "das" },
 ];
 
+const testDirectionOptions = [
+  { value: "du-en", label: "DU → EN" },
+  { value: "en-du", label: "EN → DU" },
+];
+
+function getLearnedWordNames(wordList) {
+  return wordList.filter((word) => word.learned).map((word) => word.word);
+}
+
+function applyLearnedWords(words, learnedWordNames) {
+  const learnedSet = new Set(learnedWordNames);
+
+  return words.map((word) => ({
+    ...word,
+    learned: learnedSet.has(word.word),
+  }));
+}
+
 function App() {
-  const [words, setWords] = useState(() => {
-    const storedWords = localStorage.getItem(storageKey);
-
-    if (!storedWords) {
-      return defaultWords;
-    }
-
-    try {
-      const parsedWords = JSON.parse(storedWords);
-
-      if (!Array.isArray(parsedWords)) {
-        return defaultWords;
-      }
-
-      return defaultWords.map((defaultWord) => {
-        const storedWord = parsedWords.find(
-          (item) => item.word === defaultWord.word,
-        );
-
-        return storedWord ? { ...defaultWord, ...storedWord } : defaultWord;
-      });
-    } catch {
-      return defaultWords;
-    }
-  });
+  const navigate = useNavigate();
+  const [words, setWords] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [syncMessage, setSyncMessage] = useState("");
+  const [isLoadingWords, setIsLoadingWords] = useState(true);
 
   const [learnedFilter, setLearnedFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -137,6 +152,9 @@ function App() {
   const [openDropdown, setOpenDropdown] = useState(null);
   const [visibleWordCount, setVisibleWordCount] = useState(wordBatchSize);
   const [expandedWords, setExpandedWords] = useState(() => new Set());
+  const [testModeEnabled, setTestModeEnabled] = useState(false);
+  const [testModeDirection, setTestModeDirection] = useState("du-en");
+  const [pressedWordName, setPressedWordName] = useState(null);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState(
@@ -146,11 +164,159 @@ function App() {
   const [aiResults, setAiResults] = useState({});
   const filterPanelRef = useRef(null);
   const loadMoreRef = useRef(null);
-  const pronunciationAudioRef = useRef(null);
 
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(words));
-  }, [words]);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthReady(true);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+    }
+
+    function handleOffline() {
+      setIsOnline(false);
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) {
+      return;
+    }
+
+    if (!currentUser) {
+      navigate("/login", { replace: true });
+    }
+  }, [authReady, currentUser, navigate]);
+
+  useEffect(() => {
+    if (!authReady || !currentUser) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadWordsForSession() {
+      setIsLoadingWords(true);
+      setSyncMessage(
+        isOnline ? "Syncing with Firebase..." : "Using offline cache.",
+      );
+
+      try {
+        if (isOnline) {
+          const [remoteWords, remoteLearnedWords, cachedLearnedState] =
+            await Promise.all([
+              loadRemoteWords(),
+              loadRemoteLearnedWords(currentUser.uid),
+              loadCachedLearnedWords(currentUser.uid),
+            ]);
+
+          const effectiveWords =
+            remoteWords.length > 0 ? remoteWords : defaultWords;
+
+          if (remoteWords.length === 0) {
+            await Promise.all(defaultWords.map((word) => saveRemoteWord(word)));
+          }
+
+          const learnedWordNames = cachedLearnedState.dirty
+            ? cachedLearnedState.learnedWords
+            : remoteLearnedWords;
+
+          if (cachedLearnedState.dirty) {
+            await saveRemoteLearnedWords(currentUser.uid, learnedWordNames);
+            await saveCachedLearnedWords(
+              currentUser.uid,
+              learnedWordNames,
+              false,
+            );
+          } else if (remoteLearnedWords.length > 0) {
+            await saveCachedLearnedWords(
+              currentUser.uid,
+              remoteLearnedWords,
+              false,
+            );
+          } else if (cachedLearnedState.learnedWords.length > 0) {
+            await saveRemoteLearnedWords(
+              currentUser.uid,
+              cachedLearnedState.learnedWords,
+            );
+            await saveCachedLearnedWords(
+              currentUser.uid,
+              cachedLearnedState.learnedWords,
+              false,
+            );
+          }
+
+          const mergedWords = applyLearnedWords(
+            effectiveWords,
+            learnedWordNames,
+          );
+
+          await Promise.all([
+            saveCachedWords(effectiveWords),
+            saveCachedLearnedWords(currentUser.uid, learnedWordNames, false),
+          ]);
+
+          if (!cancelled) {
+            setWords(mergedWords);
+            setSyncMessage("Firebase data loaded.");
+          }
+        } else {
+          const [cachedWords, cachedLearnedState] = await Promise.all([
+            loadCachedWords(),
+            loadCachedLearnedWords(currentUser.uid),
+          ]);
+
+          const effectiveWords =
+            cachedWords.length > 0 ? cachedWords : defaultWords;
+          const learnedWordNames = cachedLearnedState.learnedWords;
+
+          if (!cancelled) {
+            setWords(applyLearnedWords(effectiveWords, learnedWordNames));
+            setSyncMessage("Offline mode: loaded from device cache.");
+          }
+        }
+      } catch {
+        const [cachedWords, cachedLearnedState] = await Promise.all([
+          loadCachedWords(),
+          loadCachedLearnedWords(currentUser.uid),
+        ]);
+
+        const effectiveWords =
+          cachedWords.length > 0 ? cachedWords : defaultWords;
+
+        if (!cancelled) {
+          setWords(
+            applyLearnedWords(effectiveWords, cachedLearnedState.learnedWords),
+          );
+          setSyncMessage("Loaded local cache after Firebase sync failed.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingWords(false);
+        }
+      }
+    }
+
+    void loadWordsForSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, currentUser, isOnline]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -275,12 +441,34 @@ function App() {
   const progressPercent =
     totalCount > 0 ? Math.round((learnedCount / totalCount) * 100) : 0;
 
-  function toggleLearned(wordName) {
-    setWords((currentWords) =>
-      currentWords.map((word) =>
-        word.word === wordName ? { ...word, learned: !word.learned } : word,
-      ),
+  async function persistWords(nextWords) {
+    if (!currentUser) {
+      setWords(nextWords);
+      return;
+    }
+
+    const learnedWordNames = getLearnedWordNames(nextWords);
+
+    await saveCachedWords(nextWords);
+
+    if (isOnline) {
+      await saveRemoteLearnedWords(currentUser.uid, learnedWordNames);
+      await saveCachedLearnedWords(currentUser.uid, learnedWordNames, false);
+      setSyncMessage("Changes saved to Firebase.");
+    } else {
+      await saveCachedLearnedWords(currentUser.uid, learnedWordNames, true);
+      setSyncMessage("Saved offline. It will sync when connection returns.");
+    }
+
+    setWords(nextWords);
+  }
+
+  async function toggleLearned(wordName) {
+    const nextWords = words.map((word) =>
+      word.word === wordName ? { ...word, learned: !word.learned } : word,
     );
+
+    await persistWords(nextWords);
   }
 
   function toggleSelectedValue(value, setter) {
@@ -326,6 +514,12 @@ function App() {
     setExpandedWords(new Set());
   }
 
+  function resetResultsForTestMode() {
+    setVisibleWordCount(wordBatchSize);
+    setOpenDropdown(null);
+    setExpandedWords(new Set());
+  }
+
   function toggleWordExpanded(wordName) {
     setExpandedWords((currentExpandedWords) => {
       const nextExpandedWords = new Set(currentExpandedWords);
@@ -340,15 +534,23 @@ function App() {
     });
   }
 
-  function deleteWord(wordName) {
-    setWords((currentWords) =>
-      currentWords.filter((word) => word.word !== wordName),
-    );
+  async function deleteWord(wordName) {
+    if (!isOnline) {
+      setSyncMessage("Editing words requires internet.");
+      return;
+    }
+
+    const nextWords = words.filter((word) => word.word !== wordName);
+
+    setWords(nextWords);
+    await deleteRemoteWord(wordName);
+    await saveCachedWords(nextWords);
     setExpandedWords((currentExpandedWords) => {
       const nextExpandedWords = new Set(currentExpandedWords);
       nextExpandedWords.delete(wordName);
       return nextExpandedWords;
     });
+    setSyncMessage("Word deleted from Firebase.");
   }
 
   function openApiKeyModal() {
@@ -408,6 +610,28 @@ function App() {
     audio.play();
   }
 
+  function handlePromptPressStart(wordName) {
+    setPressedWordName(wordName);
+  }
+
+  function handlePromptPressEnd() {
+    setPressedWordName(null);
+  }
+
+  if (!authReady || isLoadingWords) {
+    return (
+      <div className={styles.loadingState}>
+        <div className={styles.loadingCard}>
+          <p className={styles.loadingLabel}>WörterHaus</p>
+          <strong>
+            {isOnline ? "Loading from Firebase..." : "Loading offline cache..."}
+          </strong>
+          {syncMessage ? <span>{syncMessage}</span> : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.page}>
       <Navbar onOpenApiKeyModal={openApiKeyModal} />
@@ -420,6 +644,10 @@ function App() {
             progressPercent={progressPercent}
           />
         </section>
+
+        {syncMessage ? (
+          <div className={styles.syncBanner}>{syncMessage}</div>
+        ) : null}
 
         <section ref={filterPanelRef} className={styles.panel}>
           <div className={styles.filterGrid}>
@@ -566,6 +794,43 @@ function App() {
               ))}
             </DropdownFilter>
           </div>
+
+          <div className={styles.testModePanel}>
+            <label className={styles.testModeToggle}>
+              <input
+                type="checkbox"
+                checked={testModeEnabled}
+                onChange={(event) => {
+                  setTestModeEnabled(event.target.checked);
+                  resetResultsForTestMode();
+                }}
+              />
+              <span>
+                <strong>Enable test mode</strong>
+                <em>Blur the answer side and keep the prompt side visible.</em>
+              </span>
+            </label>
+
+            <div className={styles.testModeDirections}>
+              {testDirectionOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`${styles.testDirectionButton} ${
+                    testModeDirection === option.value
+                      ? styles.testDirectionButtonActive
+                      : ""
+                  }`}
+                  onClick={() => {
+                    setTestModeDirection(option.value);
+                    resetResultsForTestMode();
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </section>
 
         <section className={styles.grid}>
@@ -576,12 +841,17 @@ function App() {
               expanded={expandedWords.has(word.word)}
               aiResult={aiResults[word.word] ?? null}
               aiBusy={aiBusyWord === word.word}
+              testModeEnabled={testModeEnabled}
+              testModeDirection={testModeDirection}
+              pressedWordName={pressedWordName}
               onToggleLearned={() => toggleLearned(word.word)}
               onDelete={() => deleteWord(word.word)}
               onGenerateAiExample={() => generateAiResult(word, "example")}
               onGenerateAiMnemonic={() => generateAiResult(word, "mnemonic")}
               onToggleExpanded={() => toggleWordExpanded(word.word)}
               onPronounce={() => pronounceWord(word.word)}
+              onPromptPressStart={() => handlePromptPressStart(word.word)}
+              onPromptPressEnd={handlePromptPressEnd}
               getConjugation={getConjugation}
             />
           ))}
@@ -691,15 +961,24 @@ function WordCard({
   expanded,
   aiResult,
   aiBusy,
+  testModeEnabled,
+  testModeDirection,
+  pressedWordName,
   onToggleLearned,
   onDelete,
   onGenerateAiExample,
   onGenerateAiMnemonic,
   onToggleExpanded,
   onPronounce,
+  onPromptPressStart,
+  onPromptPressEnd,
   getConjugation,
 }) {
   const articleClass = word.article ? styles[word.article] : styles.neutral;
+  const showGermanPrompt = testModeDirection === "du-en";
+  const promptIsPressed = pressedWordName === word.word;
+  const shouldBlurGerman = testModeEnabled && !showGermanPrompt;
+  const shouldBlurEnglish = testModeEnabled && showGermanPrompt;
 
   return (
     <article
@@ -711,51 +990,84 @@ function WordCard({
           className={styles.cardHeaderMain}
           onClick={onToggleExpanded}
         >
-          <span className={`${styles.articlePill} ${articleClass}`}>
+          <span
+            className={`${styles.articlePill} ${articleClass} ${
+              testModeEnabled ? styles.hiddenInTestMode : ""
+            }`}
+          >
             {word.article ?? "—"}
           </span>
+
           <div className={styles.cardTitleBlock}>
             <div className={styles.cardTitleLine}>
-              <h3>{word.word}</h3>
-              <span className={styles.cardArrow} aria-hidden="true">
-                ▾
-              </span>
+              <h3
+                className={`${shouldBlurGerman ? styles.promptBlur : ""} ${
+                  promptIsPressed && shouldBlurGerman ? styles.promptReveal : ""
+                }`}
+                onMouseDown={showGermanPrompt ? undefined : onPromptPressStart}
+                onMouseUp={showGermanPrompt ? undefined : onPromptPressEnd}
+                onMouseLeave={showGermanPrompt ? undefined : onPromptPressEnd}
+                onTouchStart={showGermanPrompt ? undefined : onPromptPressStart}
+                onTouchEnd={showGermanPrompt ? undefined : onPromptPressEnd}
+                onTouchCancel={showGermanPrompt ? undefined : onPromptPressEnd}
+              >
+                {word.word}
+              </h3>
+              {!testModeEnabled ? (
+                <span className={styles.cardArrow} aria-hidden="true">
+                  ▾
+                </span>
+              ) : null}
             </div>
-            <p>{word.translation}</p>
+            <p
+              className={`${shouldBlurEnglish ? styles.promptBlur : ""} ${
+                promptIsPressed && shouldBlurEnglish ? styles.promptReveal : ""
+              }`}
+              onMouseDown={showGermanPrompt ? onPromptPressStart : undefined}
+              onMouseUp={showGermanPrompt ? onPromptPressEnd : undefined}
+              onMouseLeave={showGermanPrompt ? onPromptPressEnd : undefined}
+              onTouchStart={showGermanPrompt ? onPromptPressStart : undefined}
+              onTouchEnd={showGermanPrompt ? onPromptPressEnd : undefined}
+              onTouchCancel={showGermanPrompt ? onPromptPressEnd : undefined}
+            >
+              {word.translation}
+            </p>
           </div>
         </button>
 
-        <button
-          type="button"
-          className={styles.soundButton}
-          onClick={onPronounce}
-          aria-label={`Pronounce ${word.word}`}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+        {!testModeEnabled ? (
+          <button
+            type="button"
+            className={styles.soundButton}
+            onClick={onPronounce}
+            aria-label={`Pronounce ${word.word}`}
           >
-            <path
-              d="M11 5L6.5 9H3v6h3.5L11 19V5Z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M15 9.5C16.1 10.2 16.8 11.3 16.8 12.5C16.8 13.7 16.1 14.8 15 15.5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            <path
-              d="M17.8 7C19.5 8.2 20.5 10.2 20.5 12.5C20.5 14.8 19.5 16.8 17.8 18"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M11 5L6.5 9H3v6h3.5L11 19V5Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M15 9.5C16.1 10.2 16.8 11.3 16.8 12.5C16.8 13.7 16.1 14.8 15 15.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+              <path
+                d="M17.8 7C19.5 8.2 20.5 10.2 20.5 12.5C20.5 14.8 19.5 16.8 17.8 18"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        ) : null}
       </div>
 
       <div className={styles.cardActions}>
@@ -818,21 +1130,24 @@ function WordCard({
       <div
         className={`${styles.cardBody} ${expanded ? styles.cardBodyOpen : ""}`}
       >
-        {word.plural ? (
+        {testModeEnabled &&
+        testModeDirection === "en-du" ? null : word.plural ? (
           <div className={styles.fullWidthBlock}>
             <span className={styles.blockLabel}>Plural</span>
             <strong>{word.plural}</strong>
           </div>
         ) : null}
 
-        {word.compound_breakdown ? (
+        {testModeEnabled &&
+        testModeDirection === "en-du" ? null : word.compound_breakdown ? (
           <div className={styles.fullWidthBlock}>
             <span className={styles.blockLabel}>Compound</span>
             <strong>{word.compound_breakdown.join(" + ")}</strong>
           </div>
         ) : null}
 
-        {word.type === "verb" && word.conjugations ? (
+        {testModeEnabled && testModeDirection === "en-du" ? null : word.type ===
+            "verb" && word.conjugations ? (
           <div className={styles.detailBox}>
             <span>Conjugations</span>
             <div className={styles.conjugationList}>
@@ -852,41 +1167,45 @@ function WordCard({
           </div>
         ) : null}
 
-        <div className={styles.aiSection}>
-          <div className={styles.aiHeader}>
-            <span>AI section</span>
-            <em>{aiResult ? "Ready" : "Tap to generate"}</em>
+        {testModeEnabled && testModeDirection === "en-du" ? null : (
+          <div className={styles.aiSection}>
+            <div className={styles.aiHeader}>
+              <span>AI section</span>
+              <em>{aiResult ? "Ready" : "Tap to generate"}</em>
+            </div>
+
+            <div className={styles.aiButtons}>
+              <button
+                type="button"
+                className={styles.aiButton}
+                onClick={onGenerateAiExample}
+              >
+                Generate example
+              </button>
+              <button
+                type="button"
+                className={styles.aiButton}
+                onClick={onGenerateAiMnemonic}
+              >
+                Create mnemonic
+              </button>
+            </div>
+
+            {aiBusy ? (
+              <span className={styles.emptyState}>Generating...</span>
+            ) : null}
+            {aiResult?.example ? (
+              <p className={styles.aiResult}>{aiResult.example}</p>
+            ) : null}
+            {aiResult?.mnemonic ? (
+              <p className={styles.aiResult}>{aiResult.mnemonic}</p>
+            ) : null}
           </div>
+        )}
 
-          <div className={styles.aiButtons}>
-            <button
-              type="button"
-              className={styles.aiButton}
-              onClick={onGenerateAiExample}
-            >
-              Generate example
-            </button>
-            <button
-              type="button"
-              className={styles.aiButton}
-              onClick={onGenerateAiMnemonic}
-            >
-              Create mnemonic
-            </button>
-          </div>
-
-          {aiBusy ? (
-            <span className={styles.emptyState}>Generating...</span>
-          ) : null}
-          {aiResult?.example ? (
-            <p className={styles.aiResult}>{aiResult.example}</p>
-          ) : null}
-          {aiResult?.mnemonic ? (
-            <p className={styles.aiResult}>{aiResult.mnemonic}</p>
-          ) : null}
-        </div>
-
-        {expanded ? <p className={styles.notes}>{word.notes}</p> : null}
+        {testModeEnabled && testModeDirection === "en-du" ? null : expanded ? (
+          <p className={styles.notes}>{word.notes}</p>
+        ) : null}
       </div>
     </article>
   );

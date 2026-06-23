@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="WörterHaus icon">
+  <rect width="512" height="512" rx="112" fill="#0f1117"/>
+  <path d="M132 180h248v34H132z" fill="#4f8cff"/>
+  <path d="M132 250h178v34H132z" fill="#34d399"/>
+  <path d="M132 320h216v34H132z" fill="#ff5a6e"/>
+  <path d="M352 148l48 48-48 48" fill="none" stroke="#f3f4f6" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,138 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(79, 140, 255, 0.2),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(52, 211, 153, 0.16),
+      transparent 26%
+    ),
+    linear-gradient(180deg, #0c0f16 0%, #101521 100%);
+}
+
+.hero {
+  width: min(1040px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 24px;
+  align-items: center;
+}
+
+.copy {
+  display: grid;
+  gap: 14px;
+  max-width: 540px;
+}
+
+.kicker {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.74rem;
+}
+
+.copy h1 {
+  font-size: clamp(2.4rem, 5vw, 4.8rem);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  max-width: 10ch;
+}
+
+.description {
+  max-width: 40ch;
+  color: var(--text-muted);
+  font-size: 1.02rem;
+  line-height: 1.7;
+}
+
+.card {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 28px;
+  background: rgba(25, 31, 43, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(18px);
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.field input {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 0.95rem 1rem;
+  font: inherit;
+}
+
+.field input::placeholder {
+  color: rgba(184, 192, 204, 0.65);
+}
+
+.field input:focus {
+  outline: none;
+  border-color: rgba(79, 140, 255, 0.75);
+  box-shadow: 0 0 0 4px rgba(79, 140, 255, 0.18);
+}
+
+.helper {
+  color: var(--text-muted);
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+.error {
+  color: #ff8b94;
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+.googleButton {
+  border-radius: 16px;
+  padding: 0.95rem 1rem;
+  background: linear-gradient(135deg, var(--der), #7c9cff 55%, var(--das));
+  color: #08111f;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.googleButton:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+@media (max-width: 860px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .copy h1 {
+    max-width: 100%;
+  }
+}
