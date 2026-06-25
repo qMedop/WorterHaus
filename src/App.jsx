@@ -177,8 +177,21 @@ function App() {
 
   // Non-Auth User Redirect Block
   useEffect(() => {
-    if (!authReady) return;
-    if (!currentUser) navigate("/login", { replace: true });
+    async function checkAuth() {
+      const cachedWords = await loadCachedWords();
+
+      if (!navigator.onLine && cachedWords.length > 0) {
+        return; // Stay in the app
+      }
+
+      if (!currentUser) {
+        navigate("/login", { replace: true });
+      }
+    }
+
+    if (authReady) {
+      checkAuth();
+    }
   }, [authReady, currentUser, navigate]);
 
   // Unified Local Storage Cache & Database Fetch Sync Loop
