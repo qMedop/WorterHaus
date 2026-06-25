@@ -97,6 +97,9 @@ function App() {
   const [sortMethod, setSortMethod] = useState("az");
   const [randomSeed, setRandomSeed] = useState(0);
 
+  // Mobile Collapse State
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
+
   const [visibleWordCount, setVisibleWordCount] = useState(wordBatchSize);
   const [expandedWords, setExpandedWords] = useState(() => new Set());
   const [testModeEnabled, setTestModeEnabled] = useState(false);
@@ -109,7 +112,7 @@ function App() {
   const filterPanelRef = useRef(null);
   const loadMoreRef = useRef(null);
 
-  // Firebase Auth Verification Hook with Offline Fallback Mode
+  // Device context matching rules
   useEffect(() => {
     const checkIfMobile = () => {
       const mobileRegex =
@@ -131,6 +134,7 @@ function App() {
     window.addEventListener("resize", checkIfMobile);
     return () => window.removeEventListener("resize", checkIfMobile);
   }, []);
+
   useEffect(() => {
     let authTimer;
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -306,7 +310,6 @@ function App() {
     );
   }, [expandedWords]);
 
-  // Extraction logic now sorts string parameters alphabetically right away
   const categories = useMemo(
     () =>
       [...new Set(words.map((word) => word.category).filter(Boolean))].sort(
@@ -347,7 +350,6 @@ function App() {
         selectedTags.length === 0
           ? true
           : selectedTags.some((t) => word.tags?.includes(t));
-
       const matchesLearned =
         learnedFilter === "all"
           ? true
@@ -449,7 +451,6 @@ function App() {
   const progressPercent =
     totalCount > 0 ? Math.round((learnedCount / totalCount) * 100) : 0;
 
-  // Sorting Mode Controller
   function handleSortChange(method) {
     if (method === "random") {
       setRandomSeed(Math.random());
@@ -566,7 +567,6 @@ function App() {
     setApiKeyDraft(geminiApiKey);
     setApiKeyModalOpen(true);
   }
-
   async function saveApiKey() {
     const trimmedKey = apiKeyDraft.trim();
     setGeminiApiKey(trimmedKey);
@@ -590,27 +590,11 @@ function App() {
     }
     return true;
   }
-
   function getConjugation(word, key) {
     return word.conjugations?.[key] ?? "—";
   }
-
   function pronounceWord(word) {
     new Audio(`/api/pronounce?word=${encodeURIComponent(word)}`).play();
-  }
-
-  if (!authReady || isLoadingWords) {
-    return (
-      <div className={styles.loadingState}>
-        <div className={styles.loadingCard}>
-          <p className={styles.loadingLabel}>WörterHaus</p>
-          <strong>
-            {isOnline ? "Loading from Firebase..." : "Loading offline cache..."}
-          </strong>
-          {syncMessage ? <span>{syncMessage}</span> : null}
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -631,7 +615,10 @@ function App() {
         </section>
 
         {/* --- Global Input Search Bar Layer --- */}
-        <section ref={filterPanelRef} className={styles.panel}>
+        <section
+          ref={filterPanelRef}
+          className={`${styles.panel} ${isPanelExpanded ? styles.panelExpanded : ""}`}
+        >
           <section className={styles.searchBarSection}>
             <div className={styles.searchBarWrapper}>
               <svg
@@ -673,7 +660,6 @@ function App() {
             </div>
           </section>
 
-          {/* Unified Filters Row including the newly added sorting dropdown layout */}
           <FilterGrid
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
@@ -731,6 +717,28 @@ function App() {
               )}
             </div>
           </div>
+
+          {/* --- Bottom Drawer Toggle Arrow Element --- */}
+          <button
+            type="button"
+            className={`${styles.panelExpandButton} ${isPanelExpanded ? styles.panelExpandButtonActive : ""}`}
+            onClick={() => setIsPanelExpanded(!isPanelExpanded)}
+            aria-label="Toggle filters layout visibility"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M6 9L12 15L18 9"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </section>
 
         {/* --- Primary Output Word Cards Grid --- */}
@@ -1039,7 +1047,6 @@ function FilterGrid({
         ))}
       </DropdownFilter>
 
-      {/* Embedded extracted Sort Selection Component */}
       <SortDropdownFilter
         sortMethod={sortMethod}
         handleSortChange={handleSortChange}

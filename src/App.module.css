@@ -1237,6 +1237,80 @@
   color: rgba(255, 255, 255, 0.4);
   font-size: 1rem;
 }
+
+/* ==========================================================================
+   Responsive Panel Expand/Collapse Handling
+   ========================================================================== */
+
+/* Base hide style for expander button on large displays */
+.panelExpandButton {
+  display: none;
+}
+
+@media (max-width: 460px) {
+  .panel {
+    position: relative;
+    max-height: 145px; /* Shrunk viewport limit constraint */
+    overflow: hidden;
+    padding-bottom: 45px; /* Leave space inside box layout for navigation tap */
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-bottom: 24px;
+  }
+
+  /* Linear alpha color mask overlay hiding content when collapsed */
+  .panel::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 50px;
+    background: linear-gradient(to top, rgb(23 33 44) 20%, rgba(26, 26, 26, 0));
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  /* Open expansion logic rules */
+  .panelExpanded {
+    max-height: 800px !important; /* Allow variable expanded height space */
+  }
+
+  .panelExpanded::after {
+    opacity: 0; /* Remove data mask block when expanded */
+  }
+
+  /* Custom expand action button styling */
+  .panelExpandButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    bottom: 0px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 36px;
+    backdrop-filter: blur(8px);
+    border-radius: 50%;
+    color: #f1f1f1;
+    cursor: pointer;
+    z-index: 10;
+    /* box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); */
+    transition: background 0.2s ease;
+  }
+
+  .panelExpandButton svg {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: rotate(0deg);
+  }
+
+  /* Rotates arrow cleanly up when panel is open */
+  .panelExpandButtonActive svg {
+    transform: rotate(180deg);
+  }
+}
 @media (max-width: 960px) {
   .hero,
   .grid,
