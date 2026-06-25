@@ -1254,7 +1254,8 @@
     overflow: hidden;
     padding-bottom: 45px; /* Leave space inside box layout for navigation tap */
     transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    margin-bottom: 24px;
+    margin-bottom: 8px;
+    margin-top: 4px;
   }
 
   /* Linear alpha color mask overlay hiding content when collapsed */
@@ -1295,7 +1296,6 @@
     color: #f1f1f1;
     cursor: pointer;
     z-index: 10;
-    /* box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); */
     transition: background 0.2s ease;
   }
 
