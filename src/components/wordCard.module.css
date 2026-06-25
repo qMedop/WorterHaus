@@ -8,9 +8,6 @@
   border-radius: 16px;
   overflow: hidden;
 }
-.card.cardLearned {
-  border: 1px solid rgba(39, 174, 96, 0.5);
-}
 
 /* 4px Left Border Accents for Noun Gender Semantics */
 .border-der,
@@ -261,7 +258,7 @@
 }
 .learnedChip.actionChipLearned::before {
   border-color: #34d399;
-  background-color: #27ae60;
+  background-color: #34d399;
 }
 .chipIcon {
   width: 20px;
@@ -269,8 +266,8 @@
 }
 .learnedChip .chipIcon {
   opacity: 0;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   transition: 200ms;
   z-index: 1;
 }
