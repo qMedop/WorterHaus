@@ -22,7 +22,6 @@ import WordCard from "./components/wordCard";
 import UploadWords from "./components/uploadWords";
 
 const appStateStorageKey = "worterhaus.app-state";
-const geminiApiKeyStorageKey = "worterhaus.gemini-api-key";
 const wordBatchSize = 8;
 
 const ADMIN_UID = "P2xazy0GriXlkjj0QAobkaZ6bxt1";
@@ -77,17 +76,23 @@ function App() {
   const [syncMessage, setSyncMessage] = useState("");
   const [isLoadingWords, setIsLoadingWords] = useState(true);
 
+  // Filter States
   const [learnedFilter, setLearnedFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [articleFilter, setArticleFilter] = useState("all");
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [openDropdown, setOpenDropdown] = useState(null);
+
+  // Search & Sorting States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortMethod, setSortMethod] = useState("az");
+  const [randomSeed, setRandomSeed] = useState(0);
+
   const [visibleWordCount, setVisibleWordCount] = useState(wordBatchSize);
   const [expandedWords, setExpandedWords] = useState(() => new Set());
   const [testModeEnabled, setTestModeEnabled] = useState(false);
   const [testModeDirection, setTestModeDirection] = useState("du-en");
-  const [pressedWordName, setPressedWordName] = useState(null);
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [uploadModule, setUploadModule] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
@@ -96,55 +101,21 @@ function App() {
   const filterPanelRef = useRef(null);
   const loadMoreRef = useRef(null);
 
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const checkIfMobile = () => {
-      const mobileRegex =
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-          navigator.userAgent,
-        );
-      const isMacTouch =
-        navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1;
-      const mobileDeviceDetected = mobileRegex || isMacTouch;
-
-      setIsMobile(mobileDeviceDetected);
-
-      if (mobileDeviceDetected) {
-        document.body.classList.add("mobile");
-      } else {
-        document.body.classList.remove("mobile");
-      }
-    };
-
-    checkIfMobile();
-    window.addEventListener("resize", checkIfMobile);
-    return () => window.removeEventListener("resize", checkIfMobile);
-  }, []);
-
-  // App.jsx - Modify your first useEffect hook
+  // Firebase Auth Verification Hook with Offline Fallback Mode
   useEffect(() => {
     let authTimer;
-
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (authTimer) clearTimeout(authTimer); // Clear fallback if Firebase responds quickly
-
+      if (authTimer) clearTimeout(authTimer);
       setCurrentUser(user);
-      if (user) {
-        setIsAdmin(user.uid === ADMIN_UID);
-      } else {
-        setIsAdmin(false);
-      }
+      setIsAdmin(user ? user.uid === ADMIN_UID : false);
       setAuthReady(true);
     });
 
-    // ✨ OFFLINE FALLBACK: If mobile network is dead, force state readiness after 1.5s
     if (!navigator.onLine) {
       authTimer = setTimeout(() => {
         console.warn(
           "Firebase Auth timed out offline. Forcing fallback lifecycle.",
         );
-        // We assume they were logged in previously, if auth reveals null later it will redirect
         setAuthReady(true);
       }, 1500);
     }
@@ -155,39 +126,31 @@ function App() {
     };
   }, []);
 
+  // Window Connection Network Listener
   useEffect(() => {
     function handleOnline() {
       setIsOnline(true);
     }
-
     function handleOffline() {
       setIsOnline(false);
     }
-
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
+  // Non-Auth User Redirect Block
   useEffect(() => {
-    if (!authReady) {
-      return;
-    }
-
-    if (!currentUser) {
-      navigate("/login", { replace: true });
-    }
+    if (!authReady) return;
+    if (!currentUser) navigate("/login", { replace: true });
   }, [authReady, currentUser, navigate]);
 
+  // Unified Local Storage Cache & Database Fetch Sync Loop
   useEffect(() => {
-    if (!authReady || !currentUser) {
-      return undefined;
-    }
-
+    if (!authReady || !currentUser) return undefined;
     let cancelled = false;
 
     async function loadWordsForSession() {
@@ -198,14 +161,11 @@ function App() {
 
       try {
         if (isOnline) {
-          // Attempt to pull the API key from the user table alongside words
           let remoteKey = "";
           try {
             if (typeof loadRemoteApiKey === "function") {
               remoteKey = await loadRemoteApiKey(currentUser.uid);
-              if (remoteKey && !cancelled) {
-                setGeminiApiKey(remoteKey);
-              }
+              if (remoteKey && !cancelled) setGeminiApiKey(remoteKey);
             }
           } catch (e) {
             console.error(
@@ -223,7 +183,6 @@ function App() {
 
           const effectiveWords =
             remoteWords.length > 0 ? remoteWords : defaultWords;
-
           if (remoteWords.length === 0) {
             await Promise.all(defaultWords.map((word) => saveRemoteWord(word)));
           }
@@ -261,7 +220,6 @@ function App() {
             effectiveWords,
             learnedWordNames,
           );
-
           await Promise.all([
             saveCachedWords(effectiveWords),
             saveCachedLearnedWords(currentUser.uid, learnedWordNames, false),
@@ -276,13 +234,15 @@ function App() {
             loadCachedWords(),
             loadCachedLearnedWords(currentUser.uid),
           ]);
-
           const effectiveWords =
             cachedWords.length > 0 ? cachedWords : defaultWords;
-          const learnedWordNames = cachedLearnedState.learnedWords;
-
           if (!cancelled) {
-            setWords(applyLearnedWords(effectiveWords, learnedWordNames));
+            setWords(
+              applyLearnedWords(
+                effectiveWords,
+                cachedLearnedState.learnedWords,
+              ),
+            );
             setSyncMessage("Offline mode: loaded from device cache.");
           }
         }
@@ -291,10 +251,8 @@ function App() {
           loadCachedWords(),
           loadCachedLearnedWords(currentUser.uid),
         ]);
-
         const effectiveWords =
           cachedWords.length > 0 ? cachedWords : defaultWords;
-
         if (!cancelled) {
           setWords(
             applyLearnedWords(effectiveWords, cachedLearnedState.learnedWords),
@@ -302,14 +260,11 @@ function App() {
           setSyncMessage("Loaded local cache after Firebase sync failed.");
         }
       } finally {
-        if (!cancelled) {
-          setIsLoadingWords(false);
-        }
+        if (!cancelled) setIsLoadingWords(false);
       }
     }
 
     void loadWordsForSession();
-
     return () => {
       cancelled = true;
     };
@@ -326,14 +281,19 @@ function App() {
     () => [...new Set(words.map((word) => word.category).filter(Boolean))],
     [words],
   );
-
   const tags = useMemo(
     () => [...new Set(words.flatMap((word) => word.tags ?? []))],
     [words],
   );
 
-  const scopeWords = useMemo(() => {
-    return words.filter((word) => {
+  // --- Combined Search, Filter, and Sorting Pipeline ---
+  const filteredAndSortedWords = useMemo(() => {
+    const targetScope = words.filter((word) => {
+      const matchesSearch =
+        searchQuery.trim() === "" ||
+        word.word.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        word.translation.toLowerCase().includes(searchQuery.toLowerCase());
+
       const matchesType =
         typeFilter === "all"
           ? true
@@ -343,47 +303,72 @@ function App() {
 
       const matchesArticle =
         articleFilter === "all" ? true : word.article === articleFilter;
-
       const matchesCategories =
         selectedCategories.length === 0
           ? true
           : selectedCategories.includes(word.category);
-
       const matchesTags =
         selectedTags.length === 0
           ? true
-          : selectedTags.some((tag) => word.tags?.includes(tag));
+          : selectedTags.some((t) => word.tags?.includes(t));
 
-      return matchesType && matchesArticle && matchesCategories && matchesTags;
+      const matchesLearned =
+        learnedFilter === "all"
+          ? true
+          : learnedFilter === "learned"
+            ? word.learned
+            : !word.learned;
+
+      return (
+        matchesSearch &&
+        matchesType &&
+        matchesArticle &&
+        matchesCategories &&
+        matchesTags &&
+        matchesLearned
+      );
     });
-  }, [articleFilter, selectedCategories, selectedTags, typeFilter, words]);
 
-  const filteredWords = useMemo(() => {
-    return scopeWords.filter((word) => {
-      if (learnedFilter === "learned") {
-        return word.learned;
-      }
-
-      if (learnedFilter === "notLearned") {
-        return !word.learned;
-      }
-
-      return true;
-    });
-  }, [learnedFilter, scopeWords]);
-
-  const visibleWords = useMemo(
-    () => filteredWords.slice(0, visibleWordCount),
-    [filteredWords, visibleWordCount],
-  );
-
-  const hasMoreWords = visibleWordCount < filteredWords.length;
-
-  useEffect(() => {
-    if (!openDropdown) {
-      return undefined;
+    const sorted = [...targetScope];
+    if (sortMethod === "az") {
+      sorted.sort((a, b) => a.word.localeCompare(b.word, "de"));
+    } else if (["der", "die", "das"].includes(sortMethod)) {
+      sorted.sort((a, b) => {
+        if (a.article === sortMethod && b.article !== sortMethod) return -1;
+        if (a.article !== sortMethod && b.article === sortMethod) return 1;
+        return a.word.localeCompare(b.word, "de");
+      });
+    } else if (sortMethod === "random") {
+      let currentSeed = randomSeed;
+      const pseudorandom = () => {
+        const x = Math.sin(currentSeed++) * 10000;
+        return x - Math.floor(x);
+      };
+      sorted.sort(() => pseudorandom() - 0.5);
     }
 
+    return sorted;
+  }, [
+    words,
+    searchQuery,
+    typeFilter,
+    articleFilter,
+    selectedCategories,
+    selectedTags,
+    learnedFilter,
+    sortMethod,
+    randomSeed,
+  ]);
+
+  const visibleWords = useMemo(
+    () => filteredAndSortedWords.slice(0, visibleWordCount),
+    [filteredAndSortedWords, visibleWordCount],
+  );
+  const hasMoreWords = visibleWordCount < filteredAndSortedWords.length;
+
+  // Dropdown Auto Close Logic on Outside Interactions
+  useEffect(() => {
+    if (!openDropdown) return undefined;
     function handlePointerDown(event) {
       if (
         filterPanelRef.current &&
@@ -392,28 +377,27 @@ function App() {
         setOpenDropdown(null);
       }
     }
-
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("touchstart", handlePointerDown);
-
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("touchstart", handlePointerDown);
     };
   }, [openDropdown]);
 
+  // Infinite Scroll Observer Trigger
   useEffect(() => {
     const sentinel = loadMoreRef.current;
-
-    if (!sentinel || !hasMoreWords) {
-      return undefined;
-    }
+    if (!sentinel || !hasMoreWords) return undefined;
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
           setVisibleWordCount((currentCount) =>
-            Math.min(currentCount + wordBatchSize, filteredWords.length),
+            Math.min(
+              currentCount + wordBatchSize,
+              filteredAndSortedWords.length,
+            ),
           );
         }
       },
@@ -421,35 +405,40 @@ function App() {
     );
 
     observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [filteredAndSortedWords.length, hasMoreWords]);
 
-    return () => {
-      observer.disconnect();
-    };
-  }, [filteredWords.length, hasMoreWords]);
-
-  const learnedCount = scopeWords.filter((word) => word.learned).length;
-  const totalCount = scopeWords.length;
+  const learnedCount = words.filter((word) => word.learned).length;
+  const totalCount = words.length;
   const progressPercent =
     totalCount > 0 ? Math.round((learnedCount / totalCount) * 100) : 0;
 
-  async function toggleLearned(wordName) {
-    // 1. Snapshot previous state for potential rollback
-    const previousWords = [...words];
+  // Sorting Mode Controller
+  function handleSortChange(method) {
+    if (method === "random") {
+      setRandomSeed(Math.random());
+    }
+    setSortMethod(method);
+    resetViewParameters();
+  }
 
-    // 2. Optimistically update UI state
+  function resetViewParameters() {
+    setVisibleWordCount(wordBatchSize);
+    setExpandedWords(new Set());
+  }
+
+  async function toggleLearned(wordName) {
+    const previousWords = [...words];
     const nextWords = words.map((word) =>
       word.word === wordName ? { ...word, learned: !word.learned } : word,
     );
     setWords(nextWords);
 
     if (!currentUser) return;
-
     const learnedWordNames = getLearnedWordNames(nextWords);
 
     try {
-      // Direct local cache upgrade
       await saveCachedWords(nextWords);
-
       if (isOnline) {
         await saveRemoteLearnedWords(currentUser.uid, learnedWordNames);
         await saveCachedLearnedWords(currentUser.uid, learnedWordNames, false);
@@ -459,11 +448,8 @@ function App() {
         setSyncMessage("Saved offline. It will sync when connection returns.");
       }
     } catch (error) {
-      console.error("Failed to modify learning state, rolling back...", error);
       setSyncMessage("Failed to update status. Rolled back changes.");
-      // Rollback to prior UI configuration on error
       setWords(previousWords);
-      // Synchronize indexedDB storage back to safe snapshot
       await saveCachedWords(previousWords);
     }
   }
@@ -471,63 +457,18 @@ function App() {
   function toggleSelectedValue(value, setter) {
     setter((currentValues) =>
       currentValues.includes(value)
-        ? currentValues.filter((currentValue) => currentValue !== value)
+        ? currentValues.filter((v) => v !== value)
         : [...currentValues, value],
     );
-  }
-
-  function setLearnedFilterValue(value) {
-    setLearnedFilter(value);
-    setVisibleWordCount(wordBatchSize);
-    setOpenDropdown(null);
-    setExpandedWords(new Set());
-  }
-
-  function setTypeFilterValue(value) {
-    setTypeFilter(value);
-    setVisibleWordCount(wordBatchSize);
-    setOpenDropdown(null);
-    setExpandedWords(new Set());
-  }
-
-  function setArticleFilterValue(value) {
-    setArticleFilter(value);
-    setVisibleWordCount(wordBatchSize);
-    setOpenDropdown(null);
-    setExpandedWords(new Set());
-  }
-
-  function toggleCategoryValue(value) {
-    toggleSelectedValue(value, setSelectedCategories);
-    setVisibleWordCount(wordBatchSize);
-    setOpenDropdown(null);
-    setExpandedWords(new Set());
-  }
-
-  function toggleTagValue(value) {
-    toggleSelectedValue(value, setSelectedTags);
-    setVisibleWordCount(wordBatchSize);
-    setOpenDropdown(null);
-    setExpandedWords(new Set());
-  }
-
-  function resetResultsForTestMode() {
-    setVisibleWordCount(wordBatchSize);
-    setOpenDropdown(null);
-    setExpandedWords(new Set());
+    resetViewParameters();
   }
 
   function toggleWordExpanded(wordName) {
-    setExpandedWords((currentExpandedWords) => {
-      const nextExpandedWords = new Set(currentExpandedWords);
-
-      if (nextExpandedWords.has(wordName)) {
-        nextExpandedWords.delete(wordName);
-      } else {
-        nextExpandedWords.add(wordName);
-      }
-
-      return nextExpandedWords;
+    setExpandedWords((current) => {
+      const next = new Set(current);
+      if (next.has(wordName)) next.delete(wordName);
+      else next.add(wordName);
+      return next;
     });
   }
 
@@ -536,33 +477,27 @@ function App() {
       setSyncMessage("Editing words requires internet.");
       return;
     }
-
-    // 1. Snapshot previous structural elements for potential rollback
     const previousWords = [...words];
     const previousExpanded = new Set(expandedWords);
 
-    // 2. Optimistic UI update
     const nextWords = words.filter((word) => word.word !== wordName);
     setWords(nextWords);
-    setExpandedWords((currentExpandedWords) => {
-      const nextExpandedWords = new Set(currentExpandedWords);
-      nextExpandedWords.delete(wordName);
-      return nextExpandedWords;
+    setExpandedWords((current) => {
+      const next = new Set(current);
+      next.delete(wordName);
+      return next;
     });
 
     try {
-      // 3. Initiate backend call synchronously without pausing UI lifecycle
       await deleteRemoteWord(wordName);
       await saveCachedWords(nextWords);
       setSyncMessage("Word deleted from Firebase.");
     } catch (error) {
-      console.error("Deletion failed, rolling back changes...", error);
-      setSyncMessage("Delete failed. Reverting changes.");
-      // Rollback to baseline on exception response
       setWords(previousWords);
       setExpandedWords(previousExpanded);
     }
   }
+
   async function handleUploadSuccess(newWordsPayload) {
     if (!isOnline) {
       setSyncMessage(
@@ -570,48 +505,27 @@ function App() {
       );
       return;
     }
-
-    // 1. Snapshot prior database state for an absolute rollback point
     const previousWords = [...words];
-
-    // 2. Optimistically merge and update local application UI layout structures
-    // Prevent duplicate entries by filtering out local items with matching word names
     const cleanCurrentWords = words.filter(
-      (currentWord) =>
-        !newWordsPayload.some((newWord) => newWord.word === currentWord.word),
+      (cw) => !newWordsPayload.some((nw) => nw.word === cw.word),
     );
-
     const combinedNextWords = [...cleanCurrentWords, ...newWordsPayload];
+
     setWords(combinedNextWords);
-    setSyncMessage("Optimistically parsing dataset and injecting locally...");
-
     try {
-      // 3. Write directly to the local device IndexedDB cache immediately
       await saveCachedWords(combinedNextWords);
-
-      // 4. Batch push each word systematically into your Firebase Firestore records
-      // Utilizing Promise.all to dispatch server queries synchronously
       await Promise.all(
         newWordsPayload.map((wordData) => saveRemoteWord(wordData)),
       );
-
       setSyncMessage(
-        `Successfully injected and synchronized ${newWordsPayload.length} words with Firebase.`,
+        `Successfully synchronized ${newWordsPayload.length} words.`,
       );
     } catch (error) {
-      console.error(
-        "Firebase cloud dataset initialization failed, rolling back alterations...",
-        error,
-      );
-      setSyncMessage(
-        "Cloud synchronization error detected. Reverting structural updates.",
-      );
-
-      // 5. Fail-Safe Rollback: Return state and local database back to safe baseline snapshots
       setWords(previousWords);
       await saveCachedWords(previousWords);
     }
   }
+
   function openApiKeyModal() {
     setApiKeyDraft(geminiApiKey);
     setApiKeyModalOpen(true);
@@ -621,8 +535,6 @@ function App() {
     const trimmedKey = apiKeyDraft.trim();
     setGeminiApiKey(trimmedKey);
     setApiKeyModalOpen(false);
-
-    // Persist to user table backend if authenticated and online
     if (currentUser && isOnline) {
       try {
         if (typeof saveRemoteApiKey === "function") {
@@ -630,10 +542,7 @@ function App() {
           setSyncMessage("API Key saved to your cloud profile.");
         }
       } catch (e) {
-        console.error(
-          "Could not backup API key to cloud user record table:",
-          e,
-        );
+        console.error(e);
       }
     }
   }
@@ -643,31 +552,59 @@ function App() {
       openApiKeyModal();
       return false;
     }
-
     return true;
   }
 
   function getConjugation(word, key) {
-    if (!word.conjugations) {
-      return "—";
-    }
-
-    return word.conjugations[key] ?? "—";
+    return word.conjugations?.[key] ?? "—";
   }
 
   function pronounceWord(word) {
-    const audio = new Audio(`/api/pronounce?word=${encodeURIComponent(word)}`);
-
-    audio.play();
+    new Audio(`/api/pronounce?word=${encodeURIComponent(word)}`).play();
   }
 
-  function handlePromptPressStart(wordName) {
-    setPressedWordName(wordName);
-  }
-
-  function handlePromptPressEnd() {
-    setPressedWordName(null);
-  }
+  const renderSortOptions = () => (
+    <>
+      <div className={styles.filterSectionHeader}>Sorting Framework</div>
+      <div className={styles.sortOptionsButtonGroup}>
+        <button
+          type="button"
+          className={`${styles.sortTabButton} ${sortMethod === "az" ? styles.activeSortTab : ""}`}
+          onClick={() => handleSortChange("az")}
+        >
+          A-Z Alphabetical
+        </button>
+        <button
+          type="button"
+          className={`${styles.sortTabButton} ${sortMethod === "der" ? styles.activeSortTab : ""}`}
+          onClick={() => handleSortChange("der")}
+        >
+          der Nouns
+        </button>
+        <button
+          type="button"
+          className={`${styles.sortTabButton} ${sortMethod === "die" ? styles.activeSortTab : ""}`}
+          onClick={() => handleSortChange("die")}
+        >
+          die Nouns
+        </button>
+        <button
+          type="button"
+          className={`${styles.sortTabButton} ${sortMethod === "das" ? styles.activeSortTab : ""}`}
+          onClick={() => handleSortChange("das")}
+        >
+          das Nouns
+        </button>
+        <button
+          type="button"
+          className={`${styles.sortTabButton} ${sortMethod === "random" ? styles.activeSortTab : ""}`}
+          onClick={() => handleSortChange("random")}
+        >
+          🎲 Mix Randomly
+        </button>
+      </div>
+    </>
+  );
 
   if (!authReady || isLoadingWords) {
     return (
@@ -700,150 +637,71 @@ function App() {
           />
         </section>
 
+        {/* --- Global Input Search Bar Layer --- */}
+
+        {/* Desktop Interface Viewports Filters Row */}
         <section ref={filterPanelRef} className={styles.panel}>
-          <div className={styles.filterGrid}>
-            <DropdownFilter
-              open={openDropdown === "learned"}
-              onToggle={() =>
-                setOpenDropdown((current) =>
-                  current === "learned" ? null : "learned",
-                )
-              }
-              title="Learned status"
-              summary={
-                learnedFilterOptions.find(
-                  (option) => option.value === learnedFilter,
-                )?.label ?? "All"
-              }
-            >
-              {learnedFilterOptions.map((option) => (
+          <section className={styles.searchBarSection}>
+            <div className={styles.searchBarWrapper}>
+              <svg
+                className={styles.searchIconSvg}
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M15.7955 15.8111L21 21M18 10.5C18 14.6421 14.6421 18 10.5 18C6.35786 18 3 14.6421 3 10.5C3 6.35786 6.35786 3 10.5 3C14.6421 3 18 6.35786 18 10.5Z"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search vocabulary terms or translations..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  resetViewParameters();
+                }}
+                className={styles.globalSearchInputField}
+              />
+              {searchQuery && (
                 <button
-                  key={option.value}
                   type="button"
-                  className={`${styles.dropdownOption} ${
-                    learnedFilter === option.value
-                      ? styles.dropdownOptionActive
-                      : ""
-                  }`}
-                  onClick={() => setLearnedFilterValue(option.value)}
+                  onClick={() => {
+                    setSearchQuery("");
+                    resetViewParameters();
+                  }}
+                  className={styles.clearSearchFieldBtn}
                 >
-                  {option.label}
+                  ×
                 </button>
-              ))}
-            </DropdownFilter>
+              )}
+            </div>
+          </section>
 
-            <DropdownFilter
-              open={openDropdown === "type"}
-              onToggle={() =>
-                setOpenDropdown((current) =>
-                  current === "type" ? null : "type",
-                )
-              }
-              title="Word type"
-              summary={
-                typeFilterOptions.find((option) => option.value === typeFilter)
-                  ?.label ?? "All"
-              }
-            >
-              {typeFilterOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`${styles.dropdownOption} ${
-                    typeFilter === option.value
-                      ? styles.dropdownOptionActive
-                      : ""
-                  }`}
-                  onClick={() => setTypeFilterValue(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </DropdownFilter>
+          <FilterGrid
+            openDropdown={openDropdown}
+            setOpenDropdown={setOpenDropdown}
+            learnedFilter={learnedFilter}
+            setLearnedFilter={setLearnedFilter}
+            typeFilter={typeFilter}
+            setTypeFilter={setTypeFilter}
+            articleFilter={articleFilter}
+            setArticleFilter={setArticleFilter}
+            selectedCategories={selectedCategories}
+            setSelectedCategories={setSelectedCategories}
+            selectedTags={selectedTags}
+            setSelectedTags={setSelectedTags}
+            categories={categories}
+            tags={tags}
+            resetViewParameters={resetViewParameters}
+          />
 
-            <DropdownFilter
-              open={openDropdown === "article"}
-              onToggle={() =>
-                setOpenDropdown((current) =>
-                  current === "article" ? null : "article",
-                )
-              }
-              title="Article"
-              summary={
-                articleFilterOptions.find(
-                  (option) => option.value === articleFilter,
-                )?.label ?? "All"
-              }
-            >
-              {articleFilterOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`${styles.dropdownOption} ${
-                    articleFilter === option.value
-                      ? styles.dropdownOptionActive
-                      : ""
-                  }`}
-                  onClick={() => setArticleFilterValue(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </DropdownFilter>
-
-            <DropdownFilter
-              open={openDropdown === "categories"}
-              onToggle={() =>
-                setOpenDropdown((current) =>
-                  current === "categories" ? null : "categories",
-                )
-              }
-              title="Categories"
-              summary={
-                selectedCategories.length > 0
-                  ? `${selectedCategories.length} selected`
-                  : "All"
-              }
-              multi
-            >
-              {categories.map((category) => (
-                <label key={category} className={styles.dropdownCheckRow}>
-                  <input
-                    type="checkbox"
-                    checked={selectedCategories.includes(category)}
-                    onChange={() => toggleCategoryValue(category)}
-                  />
-                  <span>{category}</span>
-                </label>
-              ))}
-            </DropdownFilter>
-
-            <DropdownFilter
-              open={openDropdown === "tags"}
-              onToggle={() =>
-                setOpenDropdown((current) =>
-                  current === "tags" ? null : "tags",
-                )
-              }
-              title="Tags"
-              summary={
-                selectedTags.length > 0
-                  ? `${selectedTags.length} selected`
-                  : "All"
-              }
-              multi
-            >
-              {tags.map((tag) => (
-                <label key={tag} className={styles.dropdownCheckRow}>
-                  <input
-                    type="checkbox"
-                    checked={selectedTags.includes(tag)}
-                    onChange={() => toggleTagValue(tag)}
-                  />
-                  <span>{tag}</span>
-                </label>
-              ))}
-            </DropdownFilter>
+          <div className={styles.desktopSortingSubPanel}>
+            {renderSortOptions()}
           </div>
 
           <div className={styles.testModePanel}>
@@ -853,12 +711,10 @@ function App() {
               >
                 <button
                   type="button"
-                  className={`${styles.toggle} ${
-                    testModeEnabled ? styles.toggleOn : ""
-                  }`}
+                  className={`${styles.toggle} ${testModeEnabled ? styles.toggleOn : ""}`}
                   onClick={() => {
-                    setTestModeEnabled((prev) => !prev);
-                    resetResultsForTestMode();
+                    setTestModeEnabled((p) => !p);
+                    resetViewParameters();
                   }}
                 >
                   <span className={styles.toggleThumb} />
@@ -867,21 +723,17 @@ function App() {
               </div>
               {testModeEnabled && (
                 <div className={styles.testModeDirections}>
-                  {testDirectionOptions.map((option) => (
+                  {testDirectionOptions.map((o) => (
                     <button
-                      key={option.value}
+                      key={o.value}
                       type="button"
-                      className={`${styles.testDirectionButton} ${
-                        testModeDirection === option.value
-                          ? styles.testDirectionButtonActive
-                          : ""
-                      }`}
+                      className={`${styles.testDirectionButton} ${testModeDirection === o.value ? styles.testDirectionButtonActive : ""}`}
                       onClick={() => {
-                        setTestModeDirection(option.value);
-                        resetResultsForTestMode();
+                        setTestModeDirection(o.value);
+                        resetViewParameters();
                       }}
                     >
-                      {option.label}
+                      {o.label}
                     </button>
                   ))}
                 </div>
@@ -890,6 +742,7 @@ function App() {
           </div>
         </section>
 
+        {/* --- Primary Output Word Cards Grid --- */}
         <section className={styles.grid}>
           {visibleWords.map((word) => (
             <WordCard
@@ -900,17 +753,22 @@ function App() {
               requireApiKey={requireApiKey}
               testModeEnabled={testModeEnabled}
               testModeDirection={testModeDirection}
-              pressedWordName={pressedWordName}
               onToggleLearned={() => toggleLearned(word.word)}
               onDelete={() => deleteWord(word.word)}
               onToggleExpanded={() => toggleWordExpanded(word.word)}
               onPronounce={pronounceWord}
-              onPromptPressStart={() => handlePromptPressStart(word.word)}
-              onPromptPressEnd={handlePromptPressEnd}
               getConjugation={getConjugation}
               geminiApiKey={geminiApiKey}
             />
           ))}
+          {visibleWords.length === 0 && (
+            <div className={styles.emptyResultsCatchBlock}>
+              <p>
+                No German vocabulary entries matched your active search query
+                filter rules.
+              </p>
+            </div>
+          )}
         </section>
 
         <div ref={loadMoreRef} className={styles.loadMoreSentinel}>
@@ -1018,7 +876,151 @@ function ProgressBar({ learnedCount, totalCount, progressPercent }) {
     </div>
   );
 }
+function FilterGrid({
+  openDropdown,
+  setOpenDropdown,
+  learnedFilter,
+  setLearnedFilter,
+  typeFilter,
+  setTypeFilter,
+  articleFilter,
+  setArticleFilter,
+  selectedCategories,
+  setSelectedCategories,
+  selectedTags,
+  setSelectedTags,
+  categories,
+  tags,
+  resetViewParameters,
+}) {
+  return (
+    <div className={styles.filterGrid}>
+      <DropdownFilter
+        open={openDropdown === "learned"}
+        onToggle={() =>
+          setOpenDropdown((c) => (c === "learned" ? null : "learned"))
+        }
+        title="Learned status"
+        summary={
+          learnedFilterOptions.find((o) => o.value === learnedFilter)?.label ??
+          "All"
+        }
+      >
+        {learnedFilterOptions.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={`${styles.dropdownOption} ${learnedFilter === o.value ? styles.dropdownOptionActive : ""}`}
+            onClick={() => {
+              setLearnedFilter(o.value);
+              resetViewParameters();
+              setOpenDropdown(null);
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </DropdownFilter>
 
+      <DropdownFilter
+        open={openDropdown === "type"}
+        onToggle={() => setOpenDropdown((c) => (c === "type" ? null : "type"))}
+        title="Word type"
+        summary={
+          typeFilterOptions.find((o) => o.value === typeFilter)?.label ?? "All"
+        }
+      >
+        {typeFilterOptions.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={`${styles.dropdownOption} ${typeFilter === o.value ? styles.dropdownOptionActive : ""}`}
+            onClick={() => {
+              setTypeFilter(o.value);
+              resetViewParameters();
+              setOpenDropdown(null);
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </DropdownFilter>
+
+      <DropdownFilter
+        open={openDropdown === "article"}
+        onToggle={() =>
+          setOpenDropdown((c) => (c === "article" ? null : "article"))
+        }
+        title="Article"
+        summary={
+          articleFilterOptions.find((o) => o.value === articleFilter)?.label ??
+          "All"
+        }
+      >
+        {articleFilterOptions.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={`${styles.dropdownOption} ${articleFilter === o.value ? styles.dropdownOptionActive : ""}`}
+            onClick={() => {
+              setArticleFilter(o.value);
+              resetViewParameters();
+              setOpenDropdown(null);
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </DropdownFilter>
+
+      <DropdownFilter
+        open={openDropdown === "categories"}
+        onToggle={() =>
+          setOpenDropdown((c) => (c === "categories" ? null : "categories"))
+        }
+        title="Categories"
+        summary={
+          selectedCategories.length > 0
+            ? `${selectedCategories.length} selected`
+            : "All"
+        }
+        multi
+      >
+        {categories.map((cat) => (
+          <label key={cat} className={styles.dropdownCheckRow}>
+            <input
+              type="checkbox"
+              checked={selectedCategories.includes(cat)}
+              onChange={() => toggleSelectedValue(cat, setSelectedCategories)}
+            />
+            <span>{cat}</span>
+          </label>
+        ))}
+      </DropdownFilter>
+
+      <DropdownFilter
+        open={openDropdown === "tags"}
+        onToggle={() => setOpenDropdown((c) => (c === "tags" ? null : "tags"))}
+        title="Tags"
+        summary={
+          selectedTags.length > 0 ? `${selectedTags.length} selected` : "All"
+        }
+        multi
+      >
+        {tags.map((tag) => (
+          <label key={tag} className={styles.dropdownCheckRow}>
+            <input
+              type="checkbox"
+              checked={selectedTags.includes(tag)}
+              onChange={() => toggleSelectedValue(tag, setSelectedTags)}
+            />
+            <span>{tag}</span>
+          </label>
+        ))}
+      </DropdownFilter>
+    </div>
+  );
+}
 function DropdownFilter({
   title,
   summary,
@@ -1098,15 +1100,15 @@ function ApiKeyModal({ apiKeyDraft, onChangeApiKeyDraft, onClose, onSave }) {
           <strong>How to get your own API Key:</strong>
           <ol style={{ margin: "6px 0 0 18px", padding: 0 }}>
             <li>
-              Go to the
+              Go to the{" "}
               <a
                 href="https://aistudio.google.com/"
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: "#0066cc", decoration: "underline" }}
+                style={{ color: "#0066cc", textDecoration: "underline" }}
               >
                 Google AI Studio
-              </a>
+              </a>{" "}
               console.
             </li>
             <li>Sign in using your primary Google Account.</li>

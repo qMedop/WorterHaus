@@ -1,16 +1,15 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { registerSW } from "virtual:pwa-register";
+
 import "./index.css";
 import App from "./App.jsx";
 import LoginPage from "./LoginPage.jsx";
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js");
-  });
-}
-
+registerSW({
+  immediate: true,
+});
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <BrowserRouter>

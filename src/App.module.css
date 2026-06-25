@@ -15,11 +15,11 @@
 }
 
 .main {
-  width: min(1180px, calc(100% - 32px));
+  width: min(1180px, calc(100% - 16px));
   margin: 0 auto;
-  padding: 24px 0 40px;
+  padding: 8px 0 40px;
   display: grid;
-  gap: 20px;
+  gap: 8px;
 }
 
 .loadingState {
@@ -70,7 +70,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  width: min(1180px, calc(100% - 32px));
+  width: min(1180px, calc(100% - 16px));
   margin: 0 auto;
 }
 
@@ -952,7 +952,291 @@
 .toggleOn .toggleThumb {
   transform: translateX(22px);
 }
+/* ==========================================================================
+   Search Bar Styles
+   ========================================================================== */
+.searchBarSection {
+  width: 100%;
+  margin: 0 auto 20px auto;
+  box-sizing: border-box;
+}
 
+.searchBarWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 4px 12px;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.searchBarWrapper:focus-within {
+  border-color: var(--text-highlight, #f1f1f1);
+  box-shadow: 0 0 0 2px rgba(241, 241, 241, 0.1);
+}
+
+.searchIconSvg {
+  width: 20px;
+  height: 20px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.globalSearchInputField {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f1f1f1;
+  font-size: 1rem;
+  padding: 8px 0;
+}
+
+.globalSearchInputField::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.clearSearchFieldBtn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.clearSearchFieldBtn:hover {
+  color: #f1f1f1;
+}
+
+/* ==========================================================================
+   Desktop Sorting Layout
+   ========================================================================== */
+.desktopSortingSubPanel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  width: 100%;
+}
+
+.filterSectionHeader {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.sortOptionsButtonGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sortTabButton {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.activeSortTab {
+  background: var(--text-highlight, #f1f1f1);
+  border-color: var(--text-highlight, #f1f1f1);
+  color: #111 !important;
+  /* font-weight: 600; */
+}
+
+/* ==========================================================================
+   Mobile Trigger Button & Active State Dot
+   ========================================================================== */
+.mobileDrawerTriggerContainer {
+  width: 100%;
+  padding: 0 16px;
+  margin-bottom: 16px;
+  box-sizing: border-box;
+}
+
+.mobileFilterMenuOpenButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+}
+
+.filterActiveCountDot {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  width: 8px;
+  height: 8px;
+  background-color: #3498db; /* Pick any vibrant blue or highlight color */
+  border-radius: 50%;
+}
+
+/* ==========================================================================
+   Mobile Filter Drawer Popup Layout
+   ========================================================================== */
+.mobileFilterOverlayMask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mobileFilterDrawerContentWindow {
+  width: 85%;
+  max-width: 400px;
+  height: 100%;
+  background: #1a1a1a; /* Match this to your overall background color card layout */
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.5);
+  animation: slideInRight 0.25s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.mobileDrawerHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mobileDrawerHeaderRow h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.closeDrawerCrossBtn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1.8rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.mobileDrawerScrollBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Form layouts inside Mobile Drawer */
+.mobileTestModeSection {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.filterGroupStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.formControlBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formControlBlock label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.formControlBlock select {
+  background: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.checkboxScrollContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 140px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Sticky Footer inside Mobile Drawer */
+.mobileDrawerStickyActionFooter {
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #1a1a1a;
+}
+
+.applyFiltersMobileBtn {
+  width: 100%;
+  background: #3498db; /* Use your platform theme color accent */
+  color: #fff;
+  border: none;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Catch Block if filter returns nothing */
+.emptyResultsCatchBlock {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px 20px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 1rem;
+}
 @media (max-width: 960px) {
   .hero,
   .grid,
