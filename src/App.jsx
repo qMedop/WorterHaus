@@ -196,7 +196,13 @@ function App() {
 
   // Unified Local Storage Cache & Database Fetch Sync Loop
   useEffect(() => {
-    if (!authReady || !currentUser) return undefined;
+    if (!authReady) return undefined;
+    // If we're online with no signed-in user, the redirect effect above will
+    // send us to /login — nothing to load here. If we're OFFLINE with no
+    // signed-in user (e.g. auth hasn't restored from persistence yet), the
+    // redirect effect deliberately keeps us on this page as long as there's
+    // cached data, so we still need to load that cached data below.
+    if (!currentUser && isOnline) return undefined;
     let cancelled = false;
 
     async function loadWordsForSession() {
@@ -204,6 +210,27 @@ function App() {
       setSyncMessage(
         isOnline ? "Syncing with Firebase..." : "Using offline cache.",
       );
+
+      // Guest/offline fallback: no signed-in user yet, so skip anything that
+      // needs a uid and just show whatever this device already has cached.
+      if (!currentUser) {
+        try {
+          const cachedWords = await loadCachedWords();
+          const effectiveWords =
+            cachedWords.length > 0 ? cachedWords : defaultWords;
+          if (!cancelled) {
+            setWords(effectiveWords);
+            setSyncMessage(
+              "Offline mode: showing cached words. Sign in once you're back online to sync your progress.",
+            );
+          }
+        } catch {
+          if (!cancelled) setSyncMessage("No cached data available offline.");
+        } finally {
+          if (!cancelled) setIsLoadingWords(false);
+        }
+        return;
+      }
 
       try {
         if (isOnline) {
@@ -484,7 +511,16 @@ function App() {
     );
     setWords(nextWords);
 
-    if (!currentUser) return;
+    if (!currentUser) {
+      // Guest/offline mode: no account to sync to yet, but still persist
+      // the change locally so it survives a reload.
+      try {
+        await saveCachedWords(nextWords);
+      } catch {
+        setWords(previousWords);
+      }
+      return;
+    }
     const learnedWordNames = getLearnedWordNames(nextWords);
 
     try {
@@ -619,6 +655,22 @@ function App() {
       />
 
       <main className={styles.main}>
+        {!isOnline ? (
+          <div
+            style={{
+              background: "#2a2110",
+              color: "#f1c66b",
+              border: "1px solid #6b5418",
+              borderRadius: "8px",
+              padding: "10px 14px",
+              fontSize: "13px",
+              marginBottom: "12px",
+            }}
+            role="status"
+          >
+            You're offline — {syncMessage || "showing cached data."}
+          </div>
+        ) : null}
         <section className={styles.hero}>
           <ProgressBar
             learnedCount={learnedCount}
@@ -756,30 +808,38 @@ function App() {
 
         {/* --- Primary Output Word Cards Grid --- */}
         <section className={styles.grid}>
-          {visibleWords.map((word) => (
-            <WordCard
-              key={word.word}
-              word={word}
-              isAdmin={isAdmin}
-              expanded={expandedWords.has(word.word)}
-              requireApiKey={requireApiKey}
-              testModeEnabled={testModeEnabled}
-              testModeDirection={testModeDirection}
-              onToggleLearned={() => toggleLearned(word.word)}
-              onDelete={() => deleteWord(word.word)}
-              onToggleExpanded={() => toggleWordExpanded(word.word)}
-              onPronounce={pronounceWord}
-              getConjugation={getConjugation}
-              geminiApiKey={geminiApiKey}
-            />
-          ))}
-          {visibleWords.length === 0 && (
+          {isLoadingWords ? (
             <div className={styles.emptyResultsCatchBlock}>
-              <p>
-                No German vocabulary entries matched your active search query
-                filter rules.
-              </p>
+              <p>Loading your vocabulary...</p>
             </div>
+          ) : (
+            <>
+              {visibleWords.map((word) => (
+                <WordCard
+                  key={word.word}
+                  word={word}
+                  isAdmin={isAdmin}
+                  expanded={expandedWords.has(word.word)}
+                  requireApiKey={requireApiKey}
+                  testModeEnabled={testModeEnabled}
+                  testModeDirection={testModeDirection}
+                  onToggleLearned={() => toggleLearned(word.word)}
+                  onDelete={() => deleteWord(word.word)}
+                  onToggleExpanded={() => toggleWordExpanded(word.word)}
+                  onPronounce={pronounceWord}
+                  getConjugation={getConjugation}
+                  geminiApiKey={geminiApiKey}
+                />
+              ))}
+              {visibleWords.length === 0 && (
+                <div className={styles.emptyResultsCatchBlock}>
+                  <p>
+                    No German vocabulary entries matched your active search
+                    query filter rules.
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </section>
 
