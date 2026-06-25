@@ -48,6 +48,14 @@ const articleFilterOptions = [
   { value: "das", label: "das" },
 ];
 
+const sortMethodOptions = [
+  { value: "az", label: "A-Z Alphabetical" },
+  { value: "der", label: "der Nouns First" },
+  { value: "die", label: "die Nouns First" },
+  { value: "das", label: "das Nouns First" },
+  { value: "random", label: "🎲 Mix Randomly" },
+];
+
 const testDirectionOptions = [
   { value: "du-en", label: "DU-EN" },
   { value: "en-du", label: "EN-DU" },
@@ -102,6 +110,27 @@ function App() {
   const loadMoreRef = useRef(null);
 
   // Firebase Auth Verification Hook with Offline Fallback Mode
+  useEffect(() => {
+    const checkIfMobile = () => {
+      const mobileRegex =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent,
+        );
+      const isMacTouch =
+        navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1;
+      const mobileDeviceDetected = mobileRegex || isMacTouch;
+
+      if (mobileDeviceDetected) {
+        document.body.classList.add("mobile");
+      } else {
+        document.body.classList.remove("mobile");
+      }
+    };
+
+    checkIfMobile();
+    window.addEventListener("resize", checkIfMobile);
+    return () => window.removeEventListener("resize", checkIfMobile);
+  }, []);
   useEffect(() => {
     let authTimer;
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -277,12 +306,19 @@ function App() {
     );
   }, [expandedWords]);
 
+  // Extraction logic now sorts string parameters alphabetically right away
   const categories = useMemo(
-    () => [...new Set(words.map((word) => word.category).filter(Boolean))],
+    () =>
+      [...new Set(words.map((word) => word.category).filter(Boolean))].sort(
+        (a, b) => a.localeCompare(b, "de"),
+      ),
     [words],
   );
   const tags = useMemo(
-    () => [...new Set(words.flatMap((word) => word.tags ?? []))],
+    () =>
+      [...new Set(words.flatMap((word) => word.tags ?? []))].sort((a, b) =>
+        a.localeCompare(b, "de"),
+      ),
     [words],
   );
 
@@ -563,49 +599,6 @@ function App() {
     new Audio(`/api/pronounce?word=${encodeURIComponent(word)}`).play();
   }
 
-  const renderSortOptions = () => (
-    <>
-      <div className={styles.filterSectionHeader}>Sorting Framework</div>
-      <div className={styles.sortOptionsButtonGroup}>
-        <button
-          type="button"
-          className={`${styles.sortTabButton} ${sortMethod === "az" ? styles.activeSortTab : ""}`}
-          onClick={() => handleSortChange("az")}
-        >
-          A-Z Alphabetical
-        </button>
-        <button
-          type="button"
-          className={`${styles.sortTabButton} ${sortMethod === "der" ? styles.activeSortTab : ""}`}
-          onClick={() => handleSortChange("der")}
-        >
-          der Nouns
-        </button>
-        <button
-          type="button"
-          className={`${styles.sortTabButton} ${sortMethod === "die" ? styles.activeSortTab : ""}`}
-          onClick={() => handleSortChange("die")}
-        >
-          die Nouns
-        </button>
-        <button
-          type="button"
-          className={`${styles.sortTabButton} ${sortMethod === "das" ? styles.activeSortTab : ""}`}
-          onClick={() => handleSortChange("das")}
-        >
-          das Nouns
-        </button>
-        <button
-          type="button"
-          className={`${styles.sortTabButton} ${sortMethod === "random" ? styles.activeSortTab : ""}`}
-          onClick={() => handleSortChange("random")}
-        >
-          🎲 Mix Randomly
-        </button>
-      </div>
-    </>
-  );
-
   if (!authReady || isLoadingWords) {
     return (
       <div className={styles.loadingState}>
@@ -638,8 +631,6 @@ function App() {
         </section>
 
         {/* --- Global Input Search Bar Layer --- */}
-
-        {/* Desktop Interface Viewports Filters Row */}
         <section ref={filterPanelRef} className={styles.panel}>
           <section className={styles.searchBarSection}>
             <div className={styles.searchBarWrapper}>
@@ -682,6 +673,7 @@ function App() {
             </div>
           </section>
 
+          {/* Unified Filters Row including the newly added sorting dropdown layout */}
           <FilterGrid
             openDropdown={openDropdown}
             setOpenDropdown={setOpenDropdown}
@@ -697,12 +689,11 @@ function App() {
             setSelectedTags={setSelectedTags}
             categories={categories}
             tags={tags}
+            sortMethod={sortMethod}
+            handleSortChange={handleSortChange}
+            toggleSelectedValue={toggleSelectedValue}
             resetViewParameters={resetViewParameters}
           />
-
-          <div className={styles.desktopSortingSubPanel}>
-            {renderSortOptions()}
-          </div>
 
           <div className={styles.testModePanel}>
             <div className={styles.testModeToggle}>
@@ -801,7 +792,6 @@ function Navbar({ onOpenApiKeyModal, isAdmin, setUploadModule }) {
       <div>
         <h1>WörterHaus</h1>
       </div>
-
       <div className={styles.navActions}>
         <button
           style={{ padding: "0.65rem", borderRadius: "50%" }}
@@ -825,7 +815,6 @@ function Navbar({ onOpenApiKeyModal, isAdmin, setUploadModule }) {
             </svg>
           </div>
         </button>
-
         {isAdmin && (
           <button
             style={{ padding: "0.65rem", borderRadius: "50%" }}
@@ -866,7 +855,6 @@ function ProgressBar({ learnedCount, totalCount, progressPercent }) {
         </div>
         <span>{progressPercent}%</span>
       </div>
-
       <div className={styles.progressTrack} aria-label="Learning progress">
         <div
           className={styles.progressFill}
@@ -876,6 +864,35 @@ function ProgressBar({ learnedCount, totalCount, progressPercent }) {
     </div>
   );
 }
+
+function SortDropdownFilter({ sortMethod, handleSortChange, open, onToggle }) {
+  return (
+    <DropdownFilter
+      open={open}
+      onToggle={onToggle}
+      title="Sort order"
+      summary={
+        sortMethodOptions.find((o) => o.value === sortMethod)?.label ??
+        "Alphabetical"
+      }
+    >
+      {sortMethodOptions.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          className={`${styles.dropdownOption} ${sortMethod === o.value ? styles.dropdownOptionActive : ""}`}
+          onClick={() => {
+            handleSortChange(o.value);
+            onToggle();
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </DropdownFilter>
+  );
+}
+
 function FilterGrid({
   openDropdown,
   setOpenDropdown,
@@ -891,6 +908,9 @@ function FilterGrid({
   setSelectedTags,
   categories,
   tags,
+  sortMethod,
+  handleSortChange,
+  toggleSelectedValue,
   resetViewParameters,
 }) {
   return (
@@ -1018,9 +1038,18 @@ function FilterGrid({
           </label>
         ))}
       </DropdownFilter>
+
+      {/* Embedded extracted Sort Selection Component */}
+      <SortDropdownFilter
+        sortMethod={sortMethod}
+        handleSortChange={handleSortChange}
+        open={openDropdown === "sort"}
+        onToggle={() => setOpenDropdown((c) => (c === "sort" ? null : "sort"))}
+      />
     </div>
   );
 }
+
 function DropdownFilter({
   title,
   summary,
@@ -1057,7 +1086,6 @@ function DropdownFilter({
           </div>
         </span>
       </button>
-
       <div className={styles.dropdownMenuWrap} aria-hidden={!open}>
         <div
           className={`${styles.dropdownMenu} ${multi ? styles.dropdownMenuMulti : ""}`}
@@ -1083,7 +1111,6 @@ function ApiKeyModal({ apiKeyDraft, onChangeApiKeyDraft, onClose, onSave }) {
           the AI features provide your own or you can contuine using the app
           without the AI features.
         </p>
-
         <p>
           If you don't have a key yet, you can get one for free from Google AI
           Studio.
@@ -1125,7 +1152,6 @@ function ApiKeyModal({ apiKeyDraft, onChangeApiKeyDraft, onClose, onSave }) {
             </li>
           </ol>
         </div>
-
         <input
           className={styles.modalInput}
           type="password"
