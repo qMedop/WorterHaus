@@ -1276,7 +1276,7 @@
   }
   /* Open expansion logic rules */
   .panelExpanded {
-    /* max-height: 800px !important;  */
+    max-height: 800px !important;
     animation: open 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
 
