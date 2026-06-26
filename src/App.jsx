@@ -717,7 +717,7 @@ function App() {
                       filterPanelRef.current.style.overflow = "hidden";
                     } else {
                       // Restore default after collapse animation finishes
-                      filterPanelRef.current.style.overflow = "";
+                      filterPanelRef.current.style.overflow = "visible";
                     }
                   }
                 }}

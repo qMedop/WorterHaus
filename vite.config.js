@@ -11,8 +11,8 @@ export default defineConfig({
       includeAssets: ["icon.svg"],
 
       manifest: {
-        name: "WorterHaus",
-        short_name: "WorterHaus",
+        name: "WörterHaus",
+        short_name: "WörterHaus",
         start_url: "/",
         display: "standalone",
         background_color: "#111827",
