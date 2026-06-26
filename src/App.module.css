@@ -1327,7 +1327,11 @@
   cursor: pointer;
   transition: opacity 0.2s;
 }
-
+.offlineStatusAlert {
+  background-color: #ffbc0038;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
 .startFlashcardsActionBtn:hover {
   opacity: 0.9;
 }

@@ -629,7 +629,13 @@ function App() {
     return word.conjugations?.[key] ?? "—";
   }
   function pronounceWord(word) {
-    new Audio(`/api/pronounce?word=${encodeURIComponent(word)}`).play();
+    const localAudio = new Audio(`/audio/${encodeURIComponent(word)}.mp3`);
+
+    localAudio.onerror = () => {
+      new Audio(`/api/pronounce?word=${encodeURIComponent(word)}`).play();
+    };
+
+    localAudio.play().catch(() => {});
   }
   const [isMobile, setIsMobile] = useState(
     window.matchMedia("(max-width: 620px)").matches,
