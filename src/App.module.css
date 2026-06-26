@@ -1308,7 +1308,9 @@
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     transform: rotate(0deg);
   }
-
+  .panelExpanded .panelExpandButton {
+    z-index: 2;
+  }
   /* Rotates arrow cleanly up when panel is open */
   .panelExpandButtonActive svg {
     transform: rotate(180deg);
