@@ -631,7 +631,19 @@ function App() {
   function pronounceWord(word) {
     new Audio(`/api/pronounce?word=${encodeURIComponent(word)}`).play();
   }
+  const [isMobile, setIsMobile] = useState(
+    window.matchMedia("(max-width: 620px)").matches,
+  );
 
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 620px)");
+
+    const handleChange = (e) => setIsMobile(e.matches);
+
+    media.addEventListener("change", handleChange);
+
+    return () => media.removeEventListener("change", handleChange);
+  }, []);
   return (
     <div className={styles.page}>
       <Navbar
@@ -683,10 +695,14 @@ function App() {
             </section>
             <AnimatePresence initial={false} mode="popLayout">
               <motion.div
-                initial={{ maxHeight: 0, overflow: "hidden" }}
-                animate={{
-                  maxHeight: isPanelExpanded ? 1000 : 150, // or whatever your natural max is
-                }}
+                initial={isMobile ? { maxHeight: 0, overflow: "hidden" } : {}}
+                animate={
+                  isMobile
+                    ? {
+                        maxHeight: isPanelExpanded ? 1000 : 150,
+                      }
+                    : {}
+                }
                 transition={{ duration: 0.3 }}
                 onAnimationStart={(latest) => {
                   // Hide overflow while animating
