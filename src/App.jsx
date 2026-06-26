@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
+import { motion, AnimatePresence } from "framer-motion";
+
 import { auth } from "./firebase/firebase";
 import {
   deleteRemoteWord,
@@ -20,6 +22,7 @@ import {
 import styles from "./App.module.css";
 import WordCard from "./components/wordCard";
 import UploadWords from "./components/uploadWords";
+import FlashcardStudySession from "./components/flashcardStudySession";
 
 const appStateStorageKey = "worterhaus.app-state";
 const wordBatchSize = 8;
@@ -74,6 +77,13 @@ function applyLearnedWords(words, learnedWordNames) {
   }));
 }
 
+// ==========================================================================
+// Sub-Component: Flashcard Study Mode Session Dashboard
+// ==========================================================================
+
+// ==========================================================================
+// Main App Component
+// ==========================================================================
 function App() {
   const navigate = useNavigate();
   const [words, setWords] = useState([]);
@@ -83,6 +93,9 @@ function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncMessage, setSyncMessage] = useState("");
   const [isLoadingWords, setIsLoadingWords] = useState(true);
+
+  // View States
+  const [flashcardModeActive, setFlashcardModeActive] = useState(false);
 
   // Filter States
   const [learnedFilter, setLearnedFilter] = useState("all");
@@ -112,7 +125,6 @@ function App() {
   const filterPanelRef = useRef(null);
   const loadMoreRef = useRef(null);
 
-  // Device context matching rules
   useEffect(() => {
     const checkIfMobile = () => {
       const mobileRegex =
@@ -159,7 +171,6 @@ function App() {
     };
   }, []);
 
-  // Window Connection Network Listener
   useEffect(() => {
     function handleOnline() {
       setIsOnline(true);
@@ -175,33 +186,17 @@ function App() {
     };
   }, []);
 
-  // Non-Auth User Redirect Block
   useEffect(() => {
     async function checkAuth() {
       const cachedWords = await loadCachedWords();
-
-      if (!navigator.onLine && cachedWords.length > 0) {
-        return; // Stay in the app
-      }
-
-      if (!currentUser) {
-        navigate("/login", { replace: true });
-      }
+      if (!navigator.onLine && cachedWords.length > 0) return;
+      if (!currentUser) navigate("/login", { replace: true });
     }
-
-    if (authReady) {
-      checkAuth();
-    }
+    if (authReady) checkAuth();
   }, [authReady, currentUser, navigate]);
 
-  // Unified Local Storage Cache & Database Fetch Sync Loop
   useEffect(() => {
     if (!authReady) return undefined;
-    // If we're online with no signed-in user, the redirect effect above will
-    // send us to /login — nothing to load here. If we're OFFLINE with no
-    // signed-in user (e.g. auth hasn't restored from persistence yet), the
-    // redirect effect deliberately keeps us on this page as long as there's
-    // cached data, so we still need to load that cached data below.
     if (!currentUser && isOnline) return undefined;
     let cancelled = false;
 
@@ -211,8 +206,6 @@ function App() {
         isOnline ? "Syncing with Firebase..." : "Using offline cache.",
       );
 
-      // Guest/offline fallback: no signed-in user yet, so skip anything that
-      // needs a uid and just show whatever this device already has cached.
       if (!currentUser) {
         try {
           const cachedWords = await loadCachedWords();
@@ -365,9 +358,24 @@ function App() {
     [words],
   );
 
+  // --- Intermediate Scope Pipeline to Calculate Accurate Selection Context Progress ---
+  const selectedScopeWords = useMemo(() => {
+    return words.filter((word) => {
+      const matchesCategories =
+        selectedCategories.length === 0
+          ? true
+          : selectedCategories.includes(word.category);
+      const matchesTags =
+        selectedTags.length === 0
+          ? true
+          : selectedTags.some((t) => word.tags?.includes(t));
+      return matchesCategories && matchesTags;
+    });
+  }, [words, selectedCategories, selectedTags]);
+
   // --- Combined Search, Filter, and Sorting Pipeline ---
   const filteredAndSortedWords = useMemo(() => {
-    const targetScope = words.filter((word) => {
+    const targetScope = selectedScopeWords.filter((word) => {
       const matchesSearch =
         searchQuery.trim() === "" ||
         word.word.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -382,14 +390,6 @@ function App() {
 
       const matchesArticle =
         articleFilter === "all" ? true : word.article === articleFilter;
-      const matchesCategories =
-        selectedCategories.length === 0
-          ? true
-          : selectedCategories.includes(word.category);
-      const matchesTags =
-        selectedTags.length === 0
-          ? true
-          : selectedTags.some((t) => word.tags?.includes(t));
       const matchesLearned =
         learnedFilter === "all"
           ? true
@@ -397,14 +397,7 @@ function App() {
             ? word.learned
             : !word.learned;
 
-      return (
-        matchesSearch &&
-        matchesType &&
-        matchesArticle &&
-        matchesCategories &&
-        matchesTags &&
-        matchesLearned
-      );
+      return matchesSearch && matchesType && matchesArticle && matchesLearned;
     });
 
     const sorted = [...targetScope];
@@ -427,12 +420,10 @@ function App() {
 
     return sorted;
   }, [
-    words,
+    selectedScopeWords,
     searchQuery,
     typeFilter,
     articleFilter,
-    selectedCategories,
-    selectedTags,
     learnedFilter,
     sortMethod,
     randomSeed,
@@ -444,7 +435,6 @@ function App() {
   );
   const hasMoreWords = visibleWordCount < filteredAndSortedWords.length;
 
-  // Dropdown Auto Close Logic on Outside Interactions
   useEffect(() => {
     if (!openDropdown) return undefined;
     function handlePointerDown(event) {
@@ -463,7 +453,6 @@ function App() {
     };
   }, [openDropdown]);
 
-  // Infinite Scroll Observer Trigger
   useEffect(() => {
     const sentinel = loadMoreRef.current;
     if (!sentinel || !hasMoreWords) return undefined;
@@ -486,15 +475,14 @@ function App() {
     return () => observer.disconnect();
   }, [filteredAndSortedWords.length, hasMoreWords]);
 
-  const learnedCount = words.filter((word) => word.learned).length;
-  const totalCount = words.length;
+  // Dynamic values tracking progress across your applied tags/categories scope
+  const learnedCount = selectedScopeWords.filter((word) => word.learned).length;
+  const totalCount = selectedScopeWords.length;
   const progressPercent =
     totalCount > 0 ? Math.round((learnedCount / totalCount) * 100) : 0;
 
   function handleSortChange(method) {
-    if (method === "random") {
-      setRandomSeed(Math.random());
-    }
+    if (method === "random") setRandomSeed(Math.random());
     setSortMethod(method);
     resetViewParameters();
   }
@@ -512,8 +500,6 @@ function App() {
     setWords(nextWords);
 
     if (!currentUser) {
-      // Guest/offline mode: no account to sync to yet, but still persist
-      // the change locally so it survives a reload.
       try {
         await saveCachedWords(nextWords);
       } catch {
@@ -654,166 +640,200 @@ function App() {
         setUploadModule={setUploadModule}
       />
 
-      <main className={styles.main}>
-        {!isOnline ? (
-          <div
-            style={{
-              background: "#2a2110",
-              color: "#f1c66b",
-              border: "1px solid #6b5418",
-              borderRadius: "8px",
-              padding: "10px 14px",
-              fontSize: "13px",
-              marginBottom: "12px",
-            }}
-            role="status"
-          >
+      <main
+        className={`${styles.main} ${flashcardModeActive ? styles.flashcardActive : ""}`}
+      >
+        {!isOnline && (
+          <div className={styles.offlineStatusAlert} role="status">
             You're offline — {syncMessage || "showing cached data."}
           </div>
-        ) : null}
-        <section className={styles.hero}>
-          <ProgressBar
-            learnedCount={learnedCount}
-            totalCount={totalCount}
-            progressPercent={progressPercent}
-          />
-        </section>
-
-        {/* --- Global Input Search Bar Layer --- */}
-        <section
-          ref={filterPanelRef}
-          className={`${styles.panel} ${isPanelExpanded ? styles.panelExpanded : ""}`}
-        >
-          <section className={styles.searchBarSection}>
-            <div className={styles.searchBarWrapper}>
-              <svg
-                className={styles.searchIconSvg}
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M15.7955 15.8111L21 21M18 10.5C18 14.6421 14.6421 18 10.5 18C6.35786 18 3 14.6421 3 10.5C3 6.35786 6.35786 3 10.5 3C14.6421 3 18 6.35786 18 10.5Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search vocabulary terms or translations..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  resetViewParameters();
-                }}
-                className={styles.globalSearchInputField}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery("");
-                    resetViewParameters();
-                  }}
-                  className={styles.clearSearchFieldBtn}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </section>
-
-          <FilterGrid
-            openDropdown={openDropdown}
-            setOpenDropdown={setOpenDropdown}
-            learnedFilter={learnedFilter}
-            setLearnedFilter={setLearnedFilter}
-            typeFilter={typeFilter}
-            setTypeFilter={setTypeFilter}
-            articleFilter={articleFilter}
-            setArticleFilter={setArticleFilter}
-            selectedCategories={selectedCategories}
-            setSelectedCategories={setSelectedCategories}
-            selectedTags={selectedTags}
-            setSelectedTags={setSelectedTags}
-            categories={categories}
-            tags={tags}
-            sortMethod={sortMethod}
-            handleSortChange={handleSortChange}
-            toggleSelectedValue={toggleSelectedValue}
-            resetViewParameters={resetViewParameters}
-          />
-
-          <div className={styles.testModePanel}>
-            <div className={styles.testModeToggle}>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "12px" }}
-              >
-                <button
-                  type="button"
-                  className={`${styles.toggle} ${testModeEnabled ? styles.toggleOn : ""}`}
-                  onClick={() => {
-                    setTestModeEnabled((p) => !p);
-                    resetViewParameters();
-                  }}
-                >
-                  <span className={styles.toggleThumb} />
-                </button>
-                <span>Test mode</span>
-              </div>
-              {testModeEnabled && (
-                <div className={styles.testModeDirections}>
-                  {testDirectionOptions.map((o) => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      className={`${styles.testDirectionButton} ${testModeDirection === o.value ? styles.testDirectionButtonActive : ""}`}
-                      onClick={() => {
-                        setTestModeDirection(o.value);
-                        resetViewParameters();
-                      }}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* --- Bottom Drawer Toggle Arrow Element --- */}
+        )}
+        <div className={styles.modeToggleContainerRow}>
           <button
             type="button"
-            className={`${styles.panelExpandButton} ${isPanelExpanded ? styles.panelExpandButtonActive : ""}`}
-            onClick={() => setIsPanelExpanded(!isPanelExpanded)}
-            aria-label="Toggle filters layout visibility"
+            className={`${styles.viewModeToggleTab} ${!flashcardModeActive ? styles.viewModeToggleTabActive : ""}`}
+            onClick={() => setFlashcardModeActive(false)}
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M6 9L12 15L18 9"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            Dictionary
           </button>
-        </section>
+          <button
+            type="button"
+            className={`${styles.viewModeToggleTab} ${flashcardModeActive ? styles.viewModeToggleTabActive : ""}`}
+            onClick={() => setFlashcardModeActive(true)}
+          >
+            Flashcard
+          </button>
+        </div>
 
-        {/* --- Primary Output Word Cards Grid --- */}
-        <section className={styles.grid}>
-          {isLoadingWords ? (
-            <div className={styles.emptyResultsCatchBlock}>
-              <p>Loading your vocabulary...</p>
-            </div>
-          ) : (
-            <>
+        {flashcardModeActive ? (
+          <FlashcardStudySession
+            wordsList={words}
+            categories={categories}
+            tags={tags}
+            onCloseSession={() => setFlashcardModeActive(false)}
+          />
+        ) : (
+          <>
+            <section className={styles.hero}>
+              <ProgressBar
+                learnedCount={learnedCount}
+                totalCount={totalCount}
+                progressPercent={progressPercent}
+              />
+            </section>
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.div
+                initial={{ maxHeight: 0, overflow: "hidden" }}
+                animate={{
+                  maxHeight: isPanelExpanded ? 1000 : 150, // or whatever your natural max is
+                }}
+                transition={{ duration: 0.3 }}
+                onAnimationStart={(latest) => {
+                  // Hide overflow while animating
+                  if (filterPanelRef.current) {
+                    filterPanelRef.current.style.overflow = "hidden";
+                  }
+                }}
+                onAnimationComplete={() => {
+                  if (filterPanelRef.current) {
+                    if (!isPanelExpanded) {
+                      filterPanelRef.current.style.overflow = "hidden";
+                    } else {
+                      // Restore default after collapse animation finishes
+                      filterPanelRef.current.style.overflow = "";
+                    }
+                  }
+                }}
+              >
+                {" "}
+                <section
+                  ref={filterPanelRef}
+                  className={`${styles.panel} ${isPanelExpanded ? styles.panelExpanded : ""}`}
+                >
+                  <section className={styles.searchBarSection}>
+                    <div className={styles.searchBarWrapper}>
+                      <svg
+                        className={styles.searchIconSvg}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M15.7955 15.8111L21 21M18 10.5C18 14.6421 14.6421 18 10.5 18C6.35786 18 3 14.6421 3 10.5C3 6.35786 6.35786 3 10.5 3C14.6421 3 18 6.35786 18 10.5Z"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <input
+                        type="text"
+                        placeholder="Search vocabulary terms or translations..."
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          resetViewParameters();
+                        }}
+                        className={styles.globalSearchInputField}
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchQuery("");
+                            resetViewParameters();
+                          }}
+                          className={styles.clearSearchFieldBtn}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </section>
+                  <FilterGrid
+                    openDropdown={openDropdown}
+                    setOpenDropdown={setOpenDropdown}
+                    learnedFilter={learnedFilter}
+                    setLearnedFilter={setLearnedFilter}
+                    typeFilter={typeFilter}
+                    setTypeFilter={setTypeFilter}
+                    articleFilter={articleFilter}
+                    setArticleFilter={setArticleFilter}
+                    selectedCategories={selectedCategories}
+                    setSelectedCategories={setSelectedCategories}
+                    selectedTags={selectedTags}
+                    setSelectedTags={setSelectedTags}
+                    categories={categories}
+                    tags={tags}
+                    sortMethod={sortMethod}
+                    handleSortChange={handleSortChange}
+                    toggleSelectedValue={toggleSelectedValue}
+                    resetViewParameters={resetViewParameters}
+                  />
+                  <div className={styles.testModePanel}>
+                    <div className={styles.testModeToggle}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className={`${styles.toggle} ${testModeEnabled ? styles.toggleOn : ""}`}
+                          onClick={() => {
+                            setTestModeEnabled((p) => !p);
+                            resetViewParameters();
+                          }}
+                        >
+                          <span className={styles.toggleThumb} />
+                        </button>
+                        <span>Test mode</span>
+                      </div>
+                      {testModeEnabled && (
+                        <div className={styles.testModeDirections}>
+                          {testDirectionOptions.map((o) => (
+                            <button
+                              key={o.value}
+                              type="button"
+                              className={`${styles.testDirectionButton} ${testModeDirection === o.value ? styles.testDirectionButtonActive : ""}`}
+                              onClick={() => {
+                                setTestModeDirection(o.value);
+                                resetViewParameters();
+                              }}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`${styles.panelExpandButton} ${isPanelExpanded ? styles.panelExpandButtonActive : ""}`}
+                    onClick={() => setIsPanelExpanded(!isPanelExpanded)}
+                    aria-label="Toggle filters visibility"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M6 9L12 15L18 9"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </section>
+              </motion.div>
+            </AnimatePresence>
+            <section className={styles.grid}>
               {visibleWords.map((word) => (
                 <WordCard
                   key={word.word}
@@ -839,13 +859,13 @@ function App() {
                   </p>
                 </div>
               )}
-            </>
-          )}
-        </section>
+            </section>
 
-        <div ref={loadMoreRef} className={styles.loadMoreSentinel}>
-          {hasMoreWords ? <span>Loading more words...</span> : null}
-        </div>
+            <div ref={loadMoreRef} className={styles.loadMoreSentinel}>
+              {hasMoreWords ? <span>Loading more words...</span> : null}
+            </div>
+          </>
+        )}
       </main>
 
       {apiKeyModalOpen ? (

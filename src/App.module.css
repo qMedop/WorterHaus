@@ -16,14 +16,16 @@
 
 .main {
   width: min(1180px, calc(100% - 16px));
+  height: calc(100dvh - 64px);
   margin: 0 auto;
   padding: 8px 0 40px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
 .loadingState {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -1242,18 +1244,274 @@
 .panelExpandButton {
   display: none;
 }
+/* ==========================================================================
+   Flashcards Modular Workspace Architecture Additions
+   ========================================================================== */
+.modeToggleContainerRow {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+  justify-content: center;
+}
+.flashcardActive .modeToggleContainerRow {
+  margin-bottom: 0;
+}
+.main.flashcardActive {
+  gap: 0;
+}
+.viewModeToggleTab {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s ease;
+}
 
+.viewModeToggleTabActive {
+  color: var(--text);
+}
+
+.viewModeToggleTabActive::after {
+  content: "";
+  position: absolute;
+  bottom: -9px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--der);
+  border-radius: 999px;
+}
+
+.flashcardConfigDeckWindow {
+  background: rgba(25, 31, 43, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: 480px;
+  margin: 24px auto;
+}
+
+.popupHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.closePopupBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.startFlashcardsActionBtn {
+  width: 100%;
+  background: var(--der);
+  color: #fff;
+  border: none;
+  padding: 14px;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.startFlashcardsActionBtn:hover {
+  opacity: 0.9;
+}
+
+.flashcardViewContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  overflow: hidden;
+  margin: 0 auto;
+}
+.flashcardViewContainer .progressCard {
+  padding: 0px;
+  border-radius: 0px;
+  border: none;
+  background-color: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.flashcardViewContainer .progressCard .progressTrack {
+  height: 2px;
+  border-radius: 0px;
+}
+.flashcardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.backToSetupBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.backToSetupBtn :global(.svg) {
+  width: 18px;
+  height: 18px;
+}
+.flashcardSliderStage {
+  position: relative;
+  width: 100%;
+  height: 340px;
+}
+.flashcardHeader,
+.flashcardSliderStage,
+.flashcardControlsRow {
+  max-width: 520px;
+  margin: 0 auto;
+}
+/* This isolates the layout slide mechanism cleanly away from the card 3D transforms */
+.flashcardMotionWrapper {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.flashcardItemElement {
+  width: 100%;
+  height: 320px;
+  perspective: 1200px;
+  transform-style: preserve-3d;
+}
+
+.flashcardInnerFrame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  /* Using exact transform rendering hooks ensures hardware acceleration */
+  transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  transform-style: preserve-3d;
+  cursor: pointer;
+}
+
+.flashcardFlippedState .flashcardInnerFrame {
+  transform: rotateY(180deg);
+}
+
+.flashcardSideFront,
+.flashcardSideBack {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden; /* Safari visual rendering guard */
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+  /* Prevents text artifacts during fast motion */
+  transform: translateZ(0);
+}
+
+.flashcardSideFront {
+  background: rgba(25, 31, 43, 0.9);
+  color: var(--text);
+}
+
+.flashcardSideBack {
+  background: rgba(30, 41, 59, 0.95);
+  color: #fff;
+  transform: rotateY(180deg) translateZ(0);
+  gap: 12px;
+}
+
+.cardArticleLabel {
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.flashcardSideFront h2 {
+  font-size: 2.2rem;
+  margin: 8px 0;
+}
+
+.cardMiniDetail {
+  margin-top: 8px;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.tapTipLabel {
+  position: absolute;
+  bottom: 16px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+.flashcardControlsRow {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+}
+
+.navDeckBtn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.navDeckBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.navDeckBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
 @media (max-width: 620px) {
   .panel {
     position: relative;
-    max-height: 145px; /* Shrunk viewport limit constraint */
-    overflow: hidden;
     padding-bottom: 45px; /* Leave space inside box layout for navigation tap */
-    transition:
-      max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-      overflow 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     margin-bottom: 8px;
     margin-top: 4px;
+    height: 100%;
+    overflow: hidden;
   }
 
   /* Linear alpha color mask overlay hiding content when collapsed */
@@ -1275,9 +1533,6 @@
     pointer-events: auto; /* Allow interaction with content when expanded */
   }
   /* Open expansion logic rules */
-  .panelExpanded {
-    animation: open 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  }
 
   .panelExpanded::after {
     opacity: 0; /* Remove data mask block when expanded */
@@ -1316,6 +1571,7 @@
     transform: rotate(180deg);
   }
 }
+
 @media (max-width: 960px) {
   .hero,
   .grid,
@@ -1343,20 +1599,5 @@
 
   .hero h2 {
     max-width: none;
-  }
-}
-
-@keyframes open {
-  0% {
-    max-height: 145px;
-    overflow: hidden;
-  }
-  99% {
-    max-height: 800px;
-    overflow: hidden;
-  }
-  100% {
-    max-height: 800px;
-    overflow: visible;
   }
 }
