@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import styles from "../App.module.css"; // Adjust path to match your layout hierarchy
+import { SoundIcon } from "./wordCard";
 
 export default function FlashcardStudySession({
   wordsList,
   tags,
   onCloseSession,
+  onPronounce,
 }) {
   const [selectedTags, setSelectedTags] = useState([]);
   const [sessionDeck, setSessionDeck] = useState([]);
@@ -80,38 +82,11 @@ export default function FlashcardStudySession({
           </div>
           <div className={styles.progressHeader}>
             <div>
-              <p className={styles.progressLabel}>Session Progress</p>
               <strong>
-                Card {currentIndex + 1} of {totalCards}
+                {currentIndex + 1} of {totalCards}
               </strong>
             </div>
-            <span>{currentProgressPercent}%</span>
           </div>
-        </div>
-
-        <div className={styles.flashcardHeader}>
-          <button
-            type="button"
-            className={styles.backToSetupBtn}
-            onClick={() => setIsStudyActive(false)}
-          >
-            <div className="svg">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M20 12H4M4 12L10 6M4 12L10 18"
-                  stroke="#f1f1f1"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                ></path>
-              </svg>
-            </div>
-            <p>Back to Setup</p>
-          </button>
         </div>
 
         {totalCards === 0 ? (
@@ -159,6 +134,12 @@ export default function FlashcardStudySession({
                         <em className={styles.tapTipLabel}>
                           Tap to reveal translation
                         </em>
+                        <div className={styles.soundBtn}>
+                          <SoundIcon
+                            word={currentCard.word}
+                            onPronounce={onPronounce}
+                          />
+                        </div>
                       </div>
 
                       <div className={styles.flashcardSideBack}>

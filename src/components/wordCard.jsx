@@ -658,4 +658,4 @@ function ArticleRevealer({
     </div>
   );
 }
-export default WordCard;
+export {WordCard , SoundIcon};

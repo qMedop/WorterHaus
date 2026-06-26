@@ -172,7 +172,8 @@
 .progressHeader strong {
   display: block;
   margin-top: 4px;
-  font-size: 1.05rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
 .progressHeader span {
@@ -1347,12 +1348,14 @@
   background-color: transparent;
   backdrop-filter: none;
   box-shadow: none;
+  gap: 4px;
 }
 .flashcardViewContainer .progressCard .progressTrack {
   height: 2px;
   border-radius: 0px;
 }
 .flashcardHeader {
+  margin-top: 48px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1376,9 +1379,8 @@
 .flashcardSliderStage {
   position: relative;
   width: 100%;
-  height: 340px;
+  height: 440px;
 }
-.flashcardHeader,
 .flashcardSliderStage,
 .flashcardControlsRow {
   max-width: 520px;
@@ -1398,7 +1400,7 @@
 
 .flashcardItemElement {
   width: 100%;
-  height: 320px;
+  height: 420px;
   perspective: 1200px;
   transform-style: preserve-3d;
 }
@@ -1413,7 +1415,19 @@
   transform-style: preserve-3d;
   cursor: pointer;
 }
-
+.flashcardInnerFrame .soundBtn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+}
+.flashcardInnerFrame .wordTypeLabel {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 2;
+  color: var(--text-muted);
+}
 .flashcardFlippedState .flashcardInnerFrame {
   transform: rotateY(180deg);
 }

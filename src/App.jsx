@@ -20,7 +20,7 @@ import {
   saveCachedWords,
 } from "./lib/userDb";
 import styles from "./App.module.css";
-import WordCard from "./components/wordCard";
+import { WordCard } from "./components/wordCard";
 import UploadWords from "./components/uploadWords";
 import FlashcardStudySession from "./components/flashcardStudySession";
 
@@ -679,6 +679,7 @@ function App() {
 
         {flashcardModeActive ? (
           <FlashcardStudySession
+            onPronounce={pronounceWord}
             wordsList={words}
             categories={categories}
             tags={tags}
